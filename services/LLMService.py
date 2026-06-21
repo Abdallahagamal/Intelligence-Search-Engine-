@@ -41,11 +41,7 @@ _RESPONSE_SCHEMA = """
 }
 """
 
-
 class LLMService:
-    """
-    LLM synthesis layer using Google Gemini via the google-genai SDK.
-    """
 
     def __init__(self, api_key: str | None = None, model_name: str = "gemini-2.5-flash-lite") -> None:
         resolved_key = api_key or os.environ.get("GEMINI_API_KEY", "")
@@ -55,8 +51,6 @@ class LLMService:
             )
         self._client = genai.Client(api_key=resolved_key)
         self._model_name = model_name
-
-    # ─────────────────────────────────────────────────────── public API ───────
 
     async def generate_research_response(
         self,
@@ -78,8 +72,6 @@ class LLMService:
             return dict(_FALLBACK)
 
         return self._validate_and_fill(result)
-
-    # ─────────────────────────────────────────────────────── prompt builder ──
 
     @staticmethod
     def _build_prompt(
@@ -165,8 +157,6 @@ class LLMService:
 
         return "\n\n".join(sections)
 
-    # ─────────────────────────────────────────────────────── gemini caller ───
-
     async def _call_gemini(
         self,
         prompt: str,
@@ -188,8 +178,6 @@ class LLMService:
         except Exception as exc:
             logger.error("Gemini API error: %s", exc)
             return None
-
-    # ─────────────────────────────────────────────────────── JSON helpers ────
 
     @staticmethod
     def _parse_json(raw: str) -> dict[str, Any] | None:

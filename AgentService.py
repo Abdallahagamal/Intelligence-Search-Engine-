@@ -1,17 +1,5 @@
-"""
-AgentService — autonomous research planning layer.
 
-ResearchAgent takes a natural-language question and produces a fully
-structured, intent-aware research plan that can be handed directly to
-AnalyzerService → FilterService → ScorerService for execution.
 
-No LLM is involved here.  Planning is entirely rule-based:
-  1.  Intent detection    — weighted signal scoring (mirrors FilterService)
-  2.  Source weights      — per-intent authority matrix
-  3.  Plan template       — ordered phases with per-phase source sets
-  4.  Query variants      — multiple search angles derived from keywords
-  5.  Strategy selection  — overall research posture matching the intent
-"""
 from __future__ import annotations
 
 import re
@@ -19,10 +7,6 @@ import unicodedata
 from datetime import datetime, timezone
 from typing import Any
 
-
-# ─────────────────────────────────────── intent signal tables ────────────────
-
-# (signal_text, weight) — same scheme as FilterService so intent labels match.
 _INTENT_SIGNALS: dict[str, list[tuple[str, int]]] = {
     "comparison": [
         ("vs", 2), ("versus", 2), ("compare", 2), ("comparison", 2),
@@ -67,11 +51,6 @@ _STOPWORDS = frozenset({
     "up", "out", "use", "used", "using",
 })
 
-
-# ──────────────────────────────── intent → source weight matrices ─────────────
-
-# Weights express how much of the total search budget to allocate per source.
-# They must sum to 1.0 within each intent.
 _SOURCE_WEIGHTS: dict[str, dict[str, float]] = {
     "research": {
         "arxiv":         0.40,
@@ -115,7 +94,6 @@ _SOURCE_WEIGHTS: dict[str, dict[str, float]] = {
     },
 }
 
-# Fall-back weights when intent is unknown
 _DEFAULT_WEIGHTS: dict[str, float] = {
     "arxiv":         0.20,
     "github":        0.20,
@@ -125,13 +103,6 @@ _DEFAULT_WEIGHTS: dict[str, float] = {
     "news":          0.10,
 }
 
-
-# ──────────────────────────────────────────── plan step templates ─────────────
-
-# Each template defines the phases for one intent.
-# 'query_angle' is appended to the core keyword set to steer each step's search.
-# 'sources' lists which platforms are queried in this phase.
-# 'priority' signals how much result weight the orchestrator should assign.
 _PLAN_TEMPLATES: dict[str, list[dict[str, Any]]] = {
 
     "research": [
@@ -171,7 +142,7 @@ _PLAN_TEMPLATES: dict[str, list[dict[str, Any]]] = {
         {
             "phase":       "Synthesis & Conclusion",
             "objective":   "Consolidate findings into a coherent, evidenced summary",
-            "sources":     [],               # internal step — no new queries
+            "sources":     [],
             "query_angle": None,
             "rationale":   "Transforms raw data into an actionable research output",
             "priority":    "high",
@@ -343,10 +314,8 @@ _PLAN_TEMPLATES: dict[str, list[dict[str, Any]]] = {
     ],
 }
 
-# Fallback template when no intent is detected
 _DEFAULT_TEMPLATE = _PLAN_TEMPLATES["research"]
 
-# Overall research posture per intent
 _STRATEGY_NAMES: dict[str, str] = {
     "research":       "academic_first",
     "coding":         "solution_first",
@@ -355,7 +324,6 @@ _STRATEGY_NAMES: dict[str, str] = {
     "recommendation": "community_first",
 }
 
-# Query angle modifiers per intent (appended to keyword set for step-level queries)
 _TEMPORAL_MODIFIERS: dict[str, str] = {
     "research":       "2024 2025",
     "coding":         "",
@@ -364,56 +332,10 @@ _TEMPORAL_MODIFIERS: dict[str, str] = {
     "recommendation": "2025",
 }
 
-
-# ═══════════════════════════════════════════════════════ ResearchAgent ════════
-
 class ResearchAgent:
-    """
-    Pure planning agent — no LLM, no network calls.
-
-    Given a user question it produces a fully structured ResearchPlan that
-    an orchestrator can execute by passing each step to AnalyzerService.
-
-    Example:
-        agent = ResearchAgent()
-        plan  = agent.plan("What is the future of AI?")
-        # → plan["steps"][0]["sources"] == ["arxiv", "wikipedia"]
-        # → plan["source_weights"]["arxiv"] == 0.40
-    """
-
-    # ════════════════════════════════════════════════════════ public API ══════
 
     def plan(self, question: str) -> dict[str, Any]:
-        """
-        Build a structured research plan for the given question.
 
-        Returns:
-            {
-                "question":          str,
-                "cleaned_question":  str,
-                "intent":            str,
-                "intent_confidence": float,
-                "keywords":          list[str],
-                "query_variants":    list[str],
-                "source_weights":    dict[str, float],
-                "strategy":          str,
-                "steps": [
-                    {
-                        "step_id":     int,
-                        "phase":       str,
-                        "objective":   str,
-                        "sources":     list[str],
-                        "query":       str | None,
-                        "rationale":   str,
-                        "priority":    str,
-                    },
-                    ...
-                ],
-                "active_sources":    list[str],
-                "estimated_results": int,
-                "created_at":        str,
-            }
-        """
         cleaned  = self._clean(question)
         lower    = cleaned.lower()
         keywords = self._extract_keywords(lower)
@@ -427,10 +349,8 @@ class ResearchAgent:
 
         steps = self._build_steps(template, keywords, intent)
 
-        # Derive the union of sources actually used across all steps
         active = sorted({s for step in steps for s in step["sources"]})
 
-        # Rough estimate: 10 results per source × number of query steps
         query_steps      = sum(1 for s in steps if s["query"] is not None)
         estimated_results = len(active) * 10 * max(query_steps, 1)
 
@@ -450,9 +370,7 @@ class ResearchAgent:
         }
 
     def describe(self, plan: dict[str, Any]) -> str:
-        """
-        Render a plan as a human-readable text block (useful for logging / CLI).
-        """
+
         lines: list[str] = [
             f"Research Plan",
             f"{'─' * 60}",
@@ -484,10 +402,6 @@ class ResearchAgent:
             ]
         return "\n".join(lines)
 
-    # ════════════════════════════════════════════════════════════ private ══════
-
-    # ── text cleaning ─────────────────────────────────────────────────────────
-
     @staticmethod
     def _clean(text: str) -> str:
         text = unicodedata.normalize("NFKC", text.strip())
@@ -502,14 +416,9 @@ class ResearchAgent:
         tokens = re.sub(r"[^\w\s]", " ", text).split()
         return [t for t in tokens if t not in _STOPWORDS and len(t) > 1]
 
-    # ── intent detection ──────────────────────────────────────────────────────
-
     @staticmethod
     def _detect_intent(text: str) -> tuple[str, float]:
-        """
-        Weighted signal scoring identical to FilterService so intent labels
-        are consistent across the pipeline.
-        """
+
         scores: dict[str, int] = {k: 0 for k in _INTENT_SIGNALS}
         for intent, signals in _INTENT_SIGNALS.items():
             for signal, weight in signals:
@@ -528,24 +437,13 @@ class ResearchAgent:
 
         return best, scores[best] / (sum(scores.values()) or 1)
 
-    # ── query variant generation ───────────────────────────────────────────────
-
     @staticmethod
     def _query_variants(
         cleaned: str,
         keywords: list[str],
         intent: str,
     ) -> list[str]:
-        """
-        Produce up to 5 distinct search angles for the question.
 
-        Variant strategy:
-          1. Original cleaned question       — direct match
-          2. Keywords only                   — shorter, broader reach
-          3. Keywords + intent modifier      — steers towards right content type
-          4. Keywords + temporal modifier    — anchors to recent content when relevant
-          5. Sub-aspect question             — digs into a specific dimension
-        """
         variants: list[str] = []
         kw_core = " ".join(keywords[:5])
         temporal = _TEMPORAL_MODIFIERS.get(intent, "")
@@ -579,7 +477,6 @@ class ResearchAgent:
         if aspect and kw_core:
             candidates.append(f"{kw_core} {aspect}")
 
-        # Deduplicate while preserving order
         seen: set[str] = set()
         for c in candidates:
             c = c.strip()
@@ -591,18 +488,13 @@ class ResearchAgent:
 
         return variants
 
-    # ── step assembly ─────────────────────────────────────────────────────────
-
     @staticmethod
     def _build_steps(
         template: list[dict[str, Any]],
         keywords: list[str],
         intent:   str,
     ) -> list[dict[str, Any]]:
-        """
-        Populate the plan template with actual queries derived from the
-        extracted keywords, returning numbered, execution-ready step dicts.
-        """
+
         steps: list[dict[str, Any]] = []
         kw_base = " ".join(keywords[:4]) if keywords else ""
 
@@ -613,7 +505,7 @@ class ResearchAgent:
             elif angle:
                 query = angle
             else:
-                query = None     # synthesis step — no outbound query
+                query = None
 
             steps.append({
                 "step_id":   i,
@@ -627,8 +519,6 @@ class ResearchAgent:
 
         return steps
 
-
-# ─────────────────────────────────────────── smoke test ──────────────────────
 if __name__ == "__main__":
     agent = ResearchAgent()
 

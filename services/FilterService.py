@@ -1,15 +1,5 @@
-"""
-FilterService v2 — transparent annotation-only data cleaning pipeline.
 
-Design principle:
-  No result is ever removed. Every item is returned enriched with:
-    flags              → spam / quality issues, each carrying a severity level
-    quality            → structural metadata (url validity, domain, lengths)
-    is_duplicate       → near-duplicate marker
-    duplicate_group_id → shared cluster ID for all items in a duplicate group
 
-All removal and ranking decisions belong to a downstream layer.
-"""
 from __future__ import annotations
 
 import html
@@ -24,11 +14,8 @@ try:
     from rapidfuzz import fuzz as _fuzz
     _HAS_RAPIDFUZZ = True
 except ImportError:
-    _fuzz = None  # type: ignore[assignment]
+    _fuzz = None
     _HAS_RAPIDFUZZ = False
-
-
-# ─────────────────────────────────────────── vocabulary tables ───────────────
 
 _STOPWORDS = frozenset({
     "a", "an", "the", "is", "are", "was", "were", "be", "been", "being",
@@ -42,8 +29,6 @@ _STOPWORDS = frozenset({
     "not", "no", "if", "up", "out", "use", "used", "using",
 })
 
-# Each intent maps to [(signal_text, weight)].
-# Multi-word signals use substring search; single words use \b boundaries.
 _INTENT_SIGNALS: dict[str, list[tuple[str, int]]] = {
     "comparison": [
         ("vs",            2), ("versus",         2), ("compare",        2),
@@ -127,15 +112,9 @@ _INTENT_BONUS: dict[str, list[str]] = {
     "recommendation": ["top rated", "review", "user review"],
 }
 
-# ─────────────────────────────────────── intent-aware filter config ──────────
-
-# Each entry controls how strictly items are flagged for that intent.
-# min_snippet_len : below this → "empty_snippet" flag
-# spam_sensitivity: "low" | "medium" | "high"
-# require_snippet : True → "empty_snippet" gets severity "medium" instead of "low"
 _INTENT_CONFIG: dict[str, dict[str, Any]] = {
     "coding": {
-        "min_snippet_len":  10,    # SO-style short answers are valid
+        "min_snippet_len":  10,
         "spam_sensitivity": "low",
         "require_snippet":  False,
     },
@@ -146,7 +125,7 @@ _INTENT_CONFIG: dict[str, dict[str, Any]] = {
     },
     "news": {
         "min_snippet_len":  30,
-        "spam_sensitivity": "high",   # strictest: fake news / clickbait risk
+        "spam_sensitivity": "high",
         "require_snippet":  True,
     },
     "comparison": {
@@ -157,7 +136,7 @@ _INTENT_CONFIG: dict[str, dict[str, Any]] = {
     "recommendation": {
         "min_snippet_len":  20,
         "spam_sensitivity": "medium",
-        "require_snippet":  True,    # completeness matters
+        "require_snippet":  True,
     },
 }
 _DEFAULT_CONFIG: dict[str, Any] = {
@@ -165,8 +144,6 @@ _DEFAULT_CONFIG: dict[str, Any] = {
     "spam_sensitivity": "medium",
     "require_snippet":  False,
 }
-
-# ─────────────────────────────────────────────── spam patterns ───────────────
 
 _SPAM_HIGH = re.compile(
     r"(click\s*here|earn\s*money|free\s*money|buy\s*now|limited\s*offer"
@@ -195,48 +172,14 @@ _URL_SHORTENER = re.compile(
 )
 _HTML_TAG = re.compile(r"<[^>]+>")
 
-
-# ═══════════════════════════════════════════════════ FilterService ════════════
-
 class FilterService:
-    """
-    Two-phase NLP pipeline:
-
-      preprocess(query)          → clean, detect intent, expand keywords
-      postfilter(results, intent) → annotate every item; nothing is removed
-
-    Integration with AnalyzerService:
-        raw  = await analyzer.fetch_all("machine learning")
-        meta = fs.preprocess("machine learning")
-        out  = fs.postfilter(raw["results"], intent=meta["intent"])
-    """
 
     def __init__(self, dup_threshold: int = 85) -> None:
-        """
-        Args:
-            dup_threshold: rapidfuzz token_sort_ratio threshold (0-100).
-                           Items scoring >= this value are marked as duplicates.
-                           85 catches rephrased titles; lower = more aggressive.
-        """
+
         self.dup_threshold = dup_threshold
 
-    # ══════════════════════════════════════════════════════ preprocess ════════
-
     def preprocess(self, query: str) -> dict[str, Any]:
-        """
-        Clean a raw search query, detect its intent, and expand keywords.
 
-        Returns:
-            {
-                "original":          str,
-                "cleaned":           str,
-                "intent":            str,    # coding | research | news |
-                                             # comparison | recommendation
-                "intent_confidence": float,  # 0.0 – 1.0
-                "keywords":          list[str],
-                "expanded_keywords": list[str],
-            }
-        """
         original = query
         cleaned  = self._clean_query(query)
         lower    = cleaned.lower()
@@ -256,47 +199,23 @@ class FilterService:
             "expanded_keywords": expanded,
         }
 
-    # ══════════════════════════════════════════════════════ postfilter ════════
-
     def postfilter(
         self,
         results: list[dict[str, Any]],
         intent: str = "research",
     ) -> dict[str, Any]:
-        """
-        Annotate every result with quality metadata, flags, and duplicate markers.
-        Nothing is removed — all items are returned.
 
-        Args:
-            results: Flat list of result dicts (AnalyzerService schema or compatible).
-            intent:  Detected query intent; controls flag sensitivity thresholds.
-
-        Returns:
-            {
-                "results": list[dict],       # all items, fully annotated
-                "metadata": {
-                    "total_input":  int,
-                    "total_output": int,     # always == total_input
-                },
-                "flags_summary": {
-                    "spam":           int,   # items with ≥1 spam flag
-                    "duplicates":     int,   # items marked is_duplicate=True
-                    "missing_fields": int,   # items with missing_url or missing_title
-                },
-            }
-        """
         cfg = _INTENT_CONFIG.get(intent, _DEFAULT_CONFIG)
 
-        # Work on copies so we never mutate the caller's objects
         enriched: list[dict[str, Any]] = []
         for item in results:
             copy = dict(item)
-            self._normalise_fields(copy)          # 1. normalise text in-place
-            copy["quality"] = self._build_quality(copy)  # 2. quality metadata
-            copy["flags"]   = self._build_flags(copy, cfg)  # 3. spam / quality flags
+            self._normalise_fields(copy)
+            copy["quality"] = self._build_quality(copy)
+            copy["flags"]   = self._build_flags(copy, cfg)
             enriched.append(copy)
 
-        self._annotate_duplicates(enriched)       # 4. dedup markers (no removal)
+        self._annotate_duplicates(enriched)
 
         return {
             "results":  enriched,
@@ -307,13 +226,9 @@ class FilterService:
             "flags_summary": self._build_summary(enriched),
         }
 
-    # ══════════════════════════════════════════════════════ private ═══════════
-
-    # ── text normalisation ───────────────────────────────────────────────────
-
     @staticmethod
     def _normalise_text(text: str) -> str:
-        """Strip HTML → unescape entities → NFKC Unicode → clean whitespace."""
+
         text = _HTML_TAG.sub("", text or "")
         text = html.unescape(text)
         text = unicodedata.normalize("NFKC", text)
@@ -328,14 +243,14 @@ class FilterService:
         return re.sub(r"\s+", " ", text).strip()
 
     def _normalise_fields(self, item: dict[str, Any]) -> None:
-        """Normalise text fields in-place."""
+
         for field in ("title", "snippet", "author"):
             if field in item:
                 item[field] = self._normalise_text(str(item[field] or ""))
 
     @staticmethod
     def _clean_query(text: str) -> str:
-        """Lightweight cleaning for raw query strings (no HTML expected)."""
+
         text = text.strip()
         text = re.sub(r"\s+", " ", text)
         text = re.sub(r"[\x00-\x1f\x7f]", "", text)
@@ -348,20 +263,9 @@ class FilterService:
             text = text.replace(src, dst)
         return text
 
-    # ── quality metadata ─────────────────────────────────────────────────────
-
     @staticmethod
     def _build_quality(item: dict[str, Any]) -> dict[str, Any]:
-        """
-        Returns:
-            {
-                "has_title":      bool,
-                "has_snippet":    bool,
-                "snippet_length": int,
-                "url_valid":      bool,
-                "domain":         str,   # e.g. "github.com"
-            }
-        """
+
         title   = (item.get("title")   or "").strip()
         snippet = (item.get("snippet") or "").strip()
         url     = (item.get("url")     or "").strip()
@@ -384,19 +288,12 @@ class FilterService:
             "domain":         domain,
         }
 
-    # ── flags (soft, structured) ─────────────────────────────────────────────
-
     def _build_flags(
         self,
         item: dict[str, Any],
         cfg: dict[str, Any],
     ) -> list[dict[str, str]]:
-        """
-        Return a list of structured flag objects:
-            [{"type": "spam_content", "severity": "high"}, ...]
 
-        Flags are never empty-list by contract — items with no issues return [].
-        """
         flags: list[dict[str, str]] = []
         title       = (item.get("title")   or "").strip()
         snippet     = (item.get("snippet") or "").strip()
@@ -404,7 +301,6 @@ class FilterService:
         quality     = item.get("quality", {})
         sensitivity = cfg.get("spam_sensitivity", "medium")
 
-        # ── missing / invalid fields ──────────────────────────────────────────
         if not url:
             flags.append({"type": "missing_url", "severity": "high"})
         elif not quality.get("url_valid"):
@@ -413,7 +309,6 @@ class FilterService:
         if not title:
             flags.append({"type": "missing_title", "severity": "high"})
 
-        # ── snippet quality (intent-aware) ────────────────────────────────────
         min_len = cfg.get("min_snippet_len", 20)
         if not snippet:
             sev = "medium" if cfg.get("require_snippet") else "low"
@@ -422,60 +317,37 @@ class FilterService:
             flags.append({"type": "low_quality", "severity": "low"})
 
         if not title:
-            return flags   # remaining checks need a title
+            return flags
 
-        # ── ALL-CAPS title ────────────────────────────────────────────────────
         alpha = re.sub(r"[^a-zA-Z]", "", title)
         if len(alpha) > 8 and alpha == alpha.upper():
             flags.append({"type": "spam_allcaps", "severity": "medium"})
 
-        # ── excessive punctuation in title ────────────────────────────────────
         punct_threshold = 0.25 if sensitivity == "high" else 0.30
         punct_ratio = sum(1 for c in title if c in string.punctuation) / max(len(title), 1)
         if punct_ratio > punct_threshold:
             flags.append({"type": "spam_punctuation", "severity": "medium"})
 
-        # ── high-severity scam phrases ────────────────────────────────────────
         if _SPAM_HIGH.search(title) or _SPAM_HIGH.search(snippet):
             flags.append({"type": "spam_content", "severity": "high"})
 
-        # ── medium-severity spam (only for medium / high sensitivity) ─────────
         if sensitivity in ("medium", "high"):
             if _SPAM_MEDIUM.search(title) or _SPAM_MEDIUM.search(snippet):
                 flags.append({"type": "spam_content", "severity": "medium"})
 
-        # ── clickbait titles ──────────────────────────────────────────────────
         if _CLICKBAIT.search(title):
             clickbait_sev = "medium" if sensitivity == "high" else "low"
             flags.append({"type": "clickbait", "severity": clickbait_sev})
 
-        # ── URL shortener / tracker ───────────────────────────────────────────
         if url and _URL_SHORTENER.search(url):
             flags.append({"type": "spam_url", "severity": "high"})
 
         return flags
 
-    # ── duplicate annotation (no removal) ────────────────────────────────────
-
     def _annotate_duplicates(self, items: list[dict[str, Any]]) -> None:
-        """
-        Mark near-duplicates in-place.  No item is removed.
 
-        Each item receives:
-            "is_duplicate"       bool   — True if this is a near-copy of an earlier item
-            "duplicate_score"    float  — similarity score (100.0 = exact URL match)
-            "duplicate_of"       str|None  — URL (or "index:N") of the representative item
-            "duplicate_group_id" str|None  — shared cluster ID (e.g. "grp_1");
-                                             set on all members including the representative
-
-        Algorithm:
-            1. For each item i, compare against all earlier items j.
-            2. Track the best-scoring match via token_sort_ratio (handles reordered words).
-            3. Follow the dup_of chain to find each item's root representative.
-            4. Assign a group ID to every cluster with ≥ 2 members.
-        """
         n = len(items)
-        dup_of: dict[int, int]   = {}    # i → j  (j < i, j is closer to root)
+        dup_of: dict[int, int]   = {}
         scores:  dict[int, float] = {}
 
         for i in range(n):
@@ -488,12 +360,10 @@ class FilterService:
                 t_j = (items[j].get("title") or "").strip()
                 u_j = (items[j].get("url")   or "").strip()
 
-                # Exact URL → definite duplicate
                 if u_i and u_j and u_i == u_j:
                     best_j, best_score = j, 100.0
                     break
 
-                # Fuzzy title similarity
                 if t_i and t_j and _HAS_RAPIDFUZZ:
                     sim = float(_fuzz.token_sort_ratio(t_i, t_j))
                     if sim >= self.dup_threshold and sim > best_score:
@@ -503,18 +373,15 @@ class FilterService:
                 dup_of[i]  = best_j
                 scores[i]  = best_score
 
-        # Find root via chain traversal
         def root(idx: int) -> int:
             while idx in dup_of:
                 idx = dup_of[idx]
             return idx
 
-        # Group items that share a root
         root_to_members: dict[int, list[int]] = {}
         for i in range(n):
             root_to_members.setdefault(root(i), []).append(i)
 
-        # Assign group IDs only to clusters with more than 1 member
         group_ids: dict[int, str] = {}
         gid = 0
         for members in root_to_members.values():
@@ -524,7 +391,6 @@ class FilterService:
                 for idx in members:
                     group_ids[idx] = label
 
-        # Write annotations
         for i, item in enumerate(items):
             if i in dup_of:
                 j = dup_of[i]
@@ -536,9 +402,7 @@ class FilterService:
                 item["is_duplicate"]       = False
                 item["duplicate_score"]    = 0.0
                 item["duplicate_of"]       = None
-                item["duplicate_group_id"] = group_ids.get(i)  # set if others dup this
-
-    # ── summary ───────────────────────────────────────────────────────────────
+                item["duplicate_group_id"] = group_ids.get(i)
 
     @staticmethod
     def _build_summary(items: list[dict[str, Any]]) -> dict[str, int]:
@@ -557,8 +421,6 @@ class FilterService:
                 dup     += 1
 
         return {"spam": spam, "duplicates": dup, "missing_fields": missing}
-
-    # ── intent detection ─────────────────────────────────────────────────────
 
     @staticmethod
     def _detect_intent(text: str) -> tuple[str, float]:
@@ -581,8 +443,6 @@ class FilterService:
         confidence = scores[best] / (sum(scores.values()) or 1)
         return best, confidence
 
-    # ── keyword expansion ─────────────────────────────────────────────────────
-
     @staticmethod
     def _expand_keywords(keywords: list[str], intent: str) -> list[str]:
         seen: set[str]      = set(keywords)
@@ -601,14 +461,11 @@ class FilterService:
 
         return expanded
 
-
-# ──────────────────────────────────────── smoke test ─────────────────────────
 if __name__ == "__main__":
     import json
 
     fs = FilterService()
 
-    # ── preprocess ────────────────────────────────────────────────────────────
     queries = [
         "best AI tools",
         "Python vs JavaScript for backend",
@@ -626,47 +483,46 @@ if __name__ == "__main__":
         print(f"  Keys   : {r['keywords']}")
         print(f"  Exp+   : {r['expanded_keywords'][:5]} ...")
 
-    # ── postfilter ────────────────────────────────────────────────────────────
     dummy = [
-        # good
+
         {"title": "OpenAI releases GPT-5",
          "snippet": "OpenAI has announced GPT-5 with dramatically improved reasoning.",
          "url": "https://openai.com/gpt5", "platform": "News",
          "date": "2025-05-01", "author": "Sam Altman", "engagement": 1200},
-        # near-duplicate of above (rephrased title)
+
         {"title": "GPT-5 Released by OpenAI",
          "snippet": "OpenAI releases its next flagship model.",
          "url": "https://techcrunch.com/gpt5", "platform": "News",
          "date": "2025-05-01", "author": "Reporter", "engagement": 800},
-        # exact URL duplicate of first
+
         {"title": "OpenAI GPT-5 Announcement",
          "snippet": "Details on the new model.",
          "url": "https://openai.com/gpt5", "platform": "News",
          "date": "2025-05-01", "author": "", "engagement": 0},
-        # missing URL
+
         {"title": "Some Article", "snippet": "Content here.", "url": "",
          "platform": "Reddit", "date": "", "author": "", "engagement": 5},
-        # high-severity spam
+
         {"title": "CLICK HERE FREE MONEY!!!",
          "snippet": "Earn money fast guaranteed results.",
          "url": "https://spam.io/free", "platform": "News",
          "date": "", "author": "", "engagement": 0},
-        # URL shortener
+
         {"title": "Interesting Research on Transformers",
          "snippet": "A deep dive into self-attention heads and their visualisation.",
          "url": "https://bit.ly/abc123", "platform": "News",
          "date": "", "author": "", "engagement": 50},
-        # clickbait
+
         {"title": "10 Things You Must Know About LLMs",
          "snippet": "You won't believe what these language models can do.",
          "url": "https://blog.example.com/llms", "platform": "Blog",
          "date": "2025-04-10", "author": "Blogger", "engagement": 30},
-        # short snippet (valid for coding intent)
+
         {"title": "asyncio.gather example",
          "snippet": "Use asyncio.gather(*coros).",
          "url": "https://stackoverflow.com/q/123", "platform": "StackOverflow",
          "date": "2023-01-01", "author": "user42", "engagement": 55},
-        # clean research result
+
         {"title": "Attention Is All You Need",
          "snippet": "We propose the Transformer, a model architecture based solely on attention.",
          "url": "https://arxiv.org/abs/1706.03762", "platform": "Arxiv",

@@ -1,16 +1,5 @@
-"""
-Intelligence Layer Test Suite
-==============================
-Tests every service in isolation, then the full pipeline, using Dummy.json
-as the data source.
 
-Run:
-    python3 test_intelligence.py
-    python3 test_intelligence.py -v          # verbose (show pass details too)
-    python3 test_intelligence.py FilterService ScorerService   # specific suites
 
-Exit code: 0 = all pass, 1 = any failure.
-"""
 from __future__ import annotations
 
 import json
@@ -20,8 +9,6 @@ import time
 import traceback
 from pathlib import Path
 from typing import Any
-
-# ── colour helpers ─────────────────────────────────────────────────────────────
 
 _USE_COLOR = sys.stdout.isatty()
 
@@ -33,16 +20,11 @@ RED    = lambda t: _c("31", t)
 BOLD   = lambda t: _c("1",  t)
 DIM    = lambda t: _c("2",  t)
 
-# ── test registry ──────────────────────────────────────────────────────────────
-# Each suite stores (class, [(label, method_name)]) so the runner can
-# instantiate the class and call bound methods — no dummy-self tricks.
-
 _SUITES: dict[str, tuple[type, list[tuple[str, str]]]] = {}
 _VERBOSE: bool = "-v" in sys.argv
 
-
 def suite(name: str):
-    """Class decorator — registers a test suite."""
+
     def decorator(cls):
         methods = [
             (attr.replace("test_", "", 1).replace("_", " "), attr)
@@ -52,9 +34,6 @@ def suite(name: str):
         _SUITES[name] = (cls, methods)
         return cls
     return decorator
-
-
-# ── assertion helpers ──────────────────────────────────────────────────────────
 
 def fail(msg: str) -> None:
     raise AssertionError(msg)
@@ -80,20 +59,14 @@ def assert_keys(d: dict, keys: list[str], label: str = "") -> None:
     if missing:
         fail(f"{label}: missing keys {missing}")
 
-# ── data loading & normalisation ───────────────────────────────────────────────
-
 _ROOT = Path(__file__).parent
 _DUMMY_PATH = _ROOT / "Dummy.json"
 _QUERY = "How do I start learning machine learning in 2026?"
 
 _PLATFORM_MAP = {"reddit": "Reddit", "github": "GitHub", "arxiv": "Arxiv"}
 
-
 def _load_dummy() -> list[dict[str, Any]]:
-    """
-    Converts Dummy.json records to the normalized pipeline schema:
-        title, snippet, url, platform, date, author, engagement
-    """
+
     raw: list[dict] = json.loads(_DUMMY_PATH.read_text())
     results = []
     for item in raw:
@@ -114,14 +87,9 @@ def _load_dummy() -> list[dict[str, Any]]:
         })
     return results
 
-
 DUMMY_RESULTS = _load_dummy()
 
 sys.path.insert(0, str(_ROOT))
-
-# ══════════════════════════════════════════════════════════════════════════════
-# Suite: FilterService
-# ══════════════════════════════════════════════════════════════════════════════
 
 @suite("FilterService")
 class TestFilterService:
@@ -131,7 +99,7 @@ class TestFilterService:
         return FilterService(dup_threshold=85)
 
     def test_import(self):
-        from services.FilterService import FilterService  # noqa: F401
+        from services.FilterService import FilterService
         _ = FilterService
 
     def test_preprocess_returns_required_keys(self):
@@ -156,7 +124,7 @@ class TestFilterService:
             fail("keywords list is empty")
 
     def test_postfilter_returns_all_results(self):
-        """Soft filtering — nothing is ever deleted."""
+
         out   = self._svc().postfilter(DUMMY_RESULTS, intent="research")
         n_in  = out.get("metadata", {}).get("total_input", -1)
         n_out = out.get("metadata", {}).get("total_output", -1)
@@ -178,7 +146,7 @@ class TestFilterService:
             ], "result schema")
 
     def test_postfilter_flags_low_quality(self):
-        """'Thanks!' and 'Following.' should be flagged as low quality / spam."""
+
         out           = self._svc().postfilter(DUMMY_RESULTS, intent="research")
         junk_snippets = {"Thanks!", "Following."}
         for r in out["results"]:
@@ -193,7 +161,7 @@ class TestFilterService:
             assert_keys(q, ["has_title", "has_snippet", "snippet_length", "url_valid"], "quality")
 
     def test_postfilter_duplicate_detection(self):
-        """Three exact copies of the same record must form a duplicate group."""
+
         svc   = self._svc()
         duped = DUMMY_RESULTS[:3] + [DUMMY_RESULTS[0]] * 3
         out   = svc.postfilter(duped, intent="research")
@@ -202,7 +170,7 @@ class TestFilterService:
             fail(f"Expected ≥2 duplicates, got {len(dupes)}")
 
     def test_postfilter_duplicate_group_ids_consistent(self):
-        """All items in a duplicate cluster share the same group ID."""
+
         svc  = self._svc()
         data = DUMMY_RESULTS[:2] + [DUMMY_RESULTS[0]]
         out  = svc.postfilter(data, intent="research")
@@ -220,7 +188,7 @@ class TestFilterService:
                     ["spam", "duplicates", "missing_fields"], "flags_summary")
 
     def test_postfilter_intent_variants(self):
-        """postfilter must accept all five intent values without crashing."""
+
         svc = self._svc()
         for intent in ("research", "coding", "news", "comparison", "recommendation"):
             svc.postfilter(DUMMY_RESULTS[:3], intent=intent)
@@ -229,11 +197,6 @@ class TestFilterService:
         out = self._svc().postfilter([], intent="research")
         if out.get("results") != []:
             fail("Empty input should return empty results list")
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# Suite: ScorerService
-# ══════════════════════════════════════════════════════════════════════════════
 
 @suite("ScorerService")
 class TestScorerService:
@@ -247,7 +210,7 @@ class TestScorerService:
         return TestScorerService._cached_svc
 
     def test_import(self):
-        from services.ScorerService import ScorerService  # noqa: F401
+        from services.ScorerService import ScorerService
         _ = ScorerService
 
     def test_score_returns_list(self):
@@ -283,7 +246,7 @@ class TestScorerService:
                         "_score_breakdown")
 
     def test_score_breakdown_weights_sum_to_confidence(self):
-        """Sum of weighted breakdown components must equal the top-level confidence score."""
+
         out   = self._svc().score(_QUERY, DUMMY_RESULTS[:1], intent="research")
         bd    = out[0]["_score_breakdown"]
         total = sum(v["weighted"] for v in bd.values())
@@ -292,7 +255,7 @@ class TestScorerService:
             fail(f"Breakdown total {total:.3f} ≠ confidence {conf:.3f}")
 
     def test_score_high_engagement_boosts_rank(self):
-        """Awesome ML (72k stars) should outrank Random ML Scripts (3 stars)."""
+
         out     = self._svc().score(_QUERY, DUMMY_RESULTS, intent="research")
         awesome = next((i for i, r in enumerate(out) if "Awesome" in r["title"]), None)
         random_ = next((i for i, r in enumerate(out) if "Random ML" in r["title"]), None)
@@ -314,11 +277,6 @@ class TestScorerService:
         if len(out) != 1:
             fail("Single-item input must return single-item output")
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-# Suite: AgentService
-# ══════════════════════════════════════════════════════════════════════════════
-
 @suite("AgentService")
 class TestAgentService:
 
@@ -327,7 +285,7 @@ class TestAgentService:
         return ResearchAgent()
 
     def test_import(self):
-        from AgentService import ResearchAgent  # noqa: F401
+        from AgentService import ResearchAgent
         _ = ResearchAgent
 
     def test_plan_returns_required_keys(self):
@@ -428,11 +386,6 @@ class TestAgentService:
         if out["intent"] != "comparison":
             fail(f"Expected 'comparison' intent, got '{out['intent']}'")
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-# Suite: DebateService
-# ══════════════════════════════════════════════════════════════════════════════
-
 @suite("DebateService")
 class TestDebateService:
 
@@ -450,7 +403,7 @@ class TestDebateService:
                )
 
     def test_import(self):
-        from DebateService import DebateService  # noqa: F401
+        from DebateService import DebateService
         _ = DebateService
 
     def test_analyze_returns_required_keys(self):
@@ -493,7 +446,7 @@ class TestDebateService:
             fail("llm_prompt_context is empty")
 
     def test_analyze_with_scored_results(self):
-        """DebateService must accept ScorerService output (has extra keys)."""
+
         out = self._svc().analyze(self._scored(), topic=_QUERY)
         assert_keys(out, ["side_a", "side_b", "conclusion"], "analyze with scored results")
 
@@ -506,7 +459,7 @@ class TestDebateService:
         assert_keys(out, ["debate_intensity"], "single item")
 
     def test_analyze_rebalance_one_sided(self):
-        """All-pro input must not crash; rebalance must populate both sides."""
+
         pro_items = [
             {**r, "snippet": "Machine learning is absolutely the best way forward."}
             for r in DUMMY_RESULTS[:6]
@@ -534,11 +487,6 @@ class TestDebateService:
         if total != meta["total_sources"]:
             fail(f"pro+con+neutral={total} ≠ total_sources={meta['total_sources']}")
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-# Suite: GraphService
-# ══════════════════════════════════════════════════════════════════════════════
-
 @suite("GraphService")
 class TestGraphService:
 
@@ -556,7 +504,7 @@ class TestGraphService:
                )
 
     def test_import(self):
-        from GraphService import GraphService  # noqa: F401
+        from GraphService import GraphService
         _ = GraphService
 
     def test_build_graph_returns_required_keys(self):
@@ -609,7 +557,7 @@ class TestGraphService:
             seen.add(pair)
 
     def test_build_graph_no_stopword_entities(self):
-        """Noise words like 'What', 'It', 'Is' must not appear as nodes."""
+
         out       = self._svc().build_graph(DUMMY_RESULTS, query=_QUERY)
         stopwords = {
             "What", "It", "Is", "Are", "This", "That", "The", "A", "An",
@@ -641,7 +589,7 @@ class TestGraphService:
                 fail(f"Unknown React Flow node type: {node['type']!r}")
 
     def test_build_graph_platform_nodes_present(self):
-        """Platforms in the results (Reddit, GitHub, Arxiv) appear as nodes."""
+
         out       = self._svc().build_graph(DUMMY_RESULTS, query=_QUERY)
         plat_lbls = {
             n["data"]["label"].lower()
@@ -653,7 +601,7 @@ class TestGraphService:
             fail(f"Missing platform nodes: {missing}")
 
     def test_build_graph_with_scored_input(self):
-        """GraphService must handle ScorerService output without crashing."""
+
         out = self._svc().build_graph(self._scored(), query=_QUERY)
         assert_keys(out, ["nodes", "edges", "metadata"], "scored input")
 
@@ -663,24 +611,19 @@ class TestGraphService:
             fail("Empty input should return nodes=[] and edges=[], not None")
 
     def test_build_graph_stroke_width_capped(self):
-        """strokeWidth should be in [1, 6]."""
+
         out = self._svc().build_graph(DUMMY_RESULTS, query=_QUERY)
         for edge in out["edges"]:
             assert_range(edge["data"]["strokeWidth"], 1, 6, "strokeWidth")
 
     def test_build_graph_node_count_respects_max(self):
-        """Entity node count should not exceed max_nodes."""
+
         from GraphService import GraphService
         svc  = GraphService(min_entity_freq=1, max_nodes=10)
         out  = svc.build_graph(DUMMY_RESULTS * 5, query=_QUERY)
         real = [n for n in out["nodes"] if n["data"]["nodeType"] not in ("query", "platform")]
         if len(real) > 10:
             fail(f"max_nodes=10 but got {len(real)} non-platform/query nodes")
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# Suite: Full Pipeline (no LLM, offline)
-# ══════════════════════════════════════════════════════════════════════════════
 
 @suite("Full Pipeline")
 class TestFullPipeline:
@@ -715,7 +658,7 @@ class TestFullPipeline:
             fail("Scorer output not sorted descending")
 
     def test_pipeline_schema_passthrough(self):
-        """Every service must preserve base keys from the previous stage."""
+
         _, scored, *_ = self._run()
         base_keys = {"title", "snippet", "url", "platform", "date", "author", "engagement"}
         for r in scored:
@@ -747,7 +690,7 @@ class TestFullPipeline:
             fail(f"{len(orphans)} orphan edge(s) in pipeline graph")
 
     def test_pipeline_confidence_higher_for_relevant_results(self):
-        """Survey paper (Arxiv) about ML should score higher than 'Thanks!' comment."""
+
         _, scored, *_ = self._run()
         survey_conf = next((r["confidence"] for r in scored if "Survey" in r["title"]), None)
         thanks_conf = next((r["confidence"] for r in scored if r["snippet"] == "Thanks!"), None)
@@ -756,7 +699,7 @@ class TestFullPipeline:
                 fail(f"Survey ({survey_conf:.1f}) should outscore 'Thanks!' ({thanks_conf:.1f})")
 
     def test_pipeline_agent_plan_then_pipeline(self):
-        """Intent from AgentService.plan() must flow into the pipeline correctly."""
+
         from AgentService           import ResearchAgent
         from services.FilterService import FilterService
         from services.ScorerService import ScorerService
@@ -768,11 +711,6 @@ class TestFullPipeline:
         scored   = ScorerService().score(_QUERY, filtered, intent=intent)
         if not scored:
             fail("Pipeline with agent-derived intent returned no results")
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# Runner
-# ══════════════════════════════════════════════════════════════════════════════
 
 def _run_suite(suite_name: str, cls: type, tests: list[tuple[str, str]]) -> tuple[int, int]:
     passed = failed = 0
@@ -808,7 +746,6 @@ def _run_suite(suite_name: str, cls: type, tests: list[tuple[str, str]]) -> tupl
         print(f"  {status}")
 
     return passed, failed
-
 
 def main() -> int:
     requested = [a for a in sys.argv[1:] if not a.startswith("-")]
@@ -849,7 +786,6 @@ def main() -> int:
         print(f"\n  {RED(f'{total_fail} test(s) failed ✗')}")
 
     return 0 if total_fail == 0 else 1
-
 
 if __name__ == "__main__":
     sys.exit(main())

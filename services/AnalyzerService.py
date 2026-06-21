@@ -10,7 +10,6 @@ from urllib.parse import quote, quote_plus
 
 import httpx
 
-
 class AnalyzerService:
    
     _EMPTY: dict[str, Any] = {
@@ -24,7 +23,7 @@ class AnalyzerService:
     }
 
     _SOURCE_MAP: dict[str, str] = {
-        #"reddit":        "_fetch_reddit",
+
         "github":        "_fetch_github",
         "arxiv":         "_fetch_arxiv",
         "stackoverflow": "_fetch_stackoverflow",
@@ -183,8 +182,6 @@ class AnalyzerService:
             ))
         return results
 
-
-
     async def _fetch_wikipedia(
         self, client: httpx.AsyncClient, query: str
     ) -> list[dict[str, Any]]:
@@ -279,15 +276,11 @@ class AnalyzerService:
                 errors[name]    = f"{type(outcome).__name__}: {outcome}"
                 by_source[name] = []
             else:
-                by_source[name] = outcome          # type: ignore[assignment]
-                flat.extend(outcome)               # type: ignore[arg-type]
+                by_source[name] = outcome
+                flat.extend(outcome)
 
         return {"results": flat, "by_source": by_source, "errors": errors}
 
-
-# ---------------------------------------------------------------------------
-# Quick test  (python AnalyzerService.py)
-# ---------------------------------------------------------------------------
 if __name__ == "__main__":
     import json
 

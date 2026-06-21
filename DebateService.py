@@ -1,17 +1,5 @@
-"""
-DebateService — viewpoint conflict detection and debate structuring engine.
 
-Takes ranked research results and produces a structured debate frame:
-  - Classifies each source as pro / con / neutral on the topic
-  - Extracts key claims per source
-  - Groups sources into two opposing sides
-  - Identifies explicit agreement and disagreement points
-  - Detects the debate type (controversy / comparison / temporal / methodological)
-  - Synthesises rule-based arguments for each side (no LLM)
-  - Emits a pre-formatted LLM prompt context string for downstream enrichment
 
-No external dependencies beyond the standard library.
-"""
 from __future__ import annotations
 
 import re
@@ -19,12 +7,6 @@ import textwrap
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from typing import Any
-
-
-# ─────────────────────────────────── stance signal tables ────────────────────
-
-# Each token/phrase raises the source's stance score up (pro) or down (con).
-# Score bounds: [-1.0, +1.0]  Neutral ≈ 0.
 
 _PRO_WORDS: frozenset[str] = frozenset({
     "beneficial", "effective", "superior", "promising", "breakthrough",
@@ -69,7 +51,6 @@ _CON_PHRASES: list[str] = [
     "shows bias", "exhibits bias", "prone to errors",
 ]
 
-# Phrases that signal an explicit contrast inside a single snippet
 _CONTRAST_MARKERS: list[str] = [
     "however", "but", "yet", "although", "despite", "whereas",
     "on the other hand", "in contrast", "while some", "critics",
@@ -77,28 +58,22 @@ _CONTRAST_MARKERS: list[str] = [
     "notwithstanding", "conversely",
 ]
 
-# Phrases that signal temporal framing
 _TEMPORAL_MARKERS: list[str] = [
     "traditional", "legacy", "old", "outdated", "previous", "formerly",
     "modern", "new", "recent", "latest", "current", "contemporary",
     "next-generation", "future",
 ]
 
-# Methodological conflict signals (recommending different tools/techniques)
 _METHOD_MARKERS: list[str] = [
     "approach", "method", "technique", "algorithm", "framework", "model",
     "architecture", "strategy", "paradigm", "solution",
 ]
 
-# Words stripped from claim sentences before comparison (for agreement detection)
 _HEDGE_WORDS: frozenset[str] = frozenset({
     "arguably", "generally", "typically", "often", "usually", "sometimes",
     "perhaps", "possibly", "probably", "likely", "seems", "appears",
     "suggests", "indicates", "may", "might", "could", "should",
 })
-
-
-# ────────────────────────────────── debate type detection ────────────────────
 
 _DEBATE_TYPE_SIGNALS: dict[str, list[str]] = {
     "comparison": [
@@ -121,12 +96,9 @@ _DEBATE_TYPE_SIGNALS: dict[str, list[str]] = {
     ],
 }
 
-
-# ──────────────────────────────────── data containers ────────────────────────
-
 @dataclass
 class _SourceRecord:
-    """Enriched view of one search result with stance annotations."""
+
     title:         str
     snippet:       str
     url:           str
@@ -134,13 +106,12 @@ class _SourceRecord:
     author:        str
     date:          str
     engagement:    int
-    stance_label:  str              # "pro" | "con" | "neutral"
-    stance_score:  float            # [-1.0, +1.0]
+    stance_label:  str
+    stance_score:  float
     signal_words:  list[str]
     signal_phrases: list[str]
     key_claims:    list[str]
-    has_contrast:  bool             # internal contrast (both sides in one snippet)
-
+    has_contrast:  bool
 
 @dataclass
 class DebateSide:
@@ -151,20 +122,7 @@ class DebateSide:
     signal_words: list[str]
     sources:     list[dict[str, Any]]
 
-
-# ═══════════════════════════════════════════════════════ DebateService ════════
-
 class DebateService:
-    """
-    Viewpoint conflict detection and debate structuring engine.
-
-    Usage:
-        ds     = DebateService()
-        debate = ds.analyze(ranked_results, topic="Is AI safe?")
-
-        # Feed to LLM:
-        llm_response = llm.complete(debate["llm_prompt_context"])
-    """
 
     def __init__(
         self,
@@ -173,77 +131,40 @@ class DebateService:
         max_claims_per_side: int   = 6,
         max_sources_per_side: int  = 8,
     ) -> None:
-        """
-        Args:
-            min_claim_len:        Minimum character length for a valid claim sentence.
-            neutral_threshold:    Stance scores inside [-t, +t] are classified neutral.
-            max_claims_per_side:  Caps the key_claims list per side.
-            max_sources_per_side: Caps how many sources appear in each side.
-        """
+
         self.min_claim_len        = min_claim_len
         self.neutral_threshold    = neutral_threshold
         self.max_claims_per_side  = max_claims_per_side
         self.max_sources_per_side = max_sources_per_side
-
-    # ════════════════════════════════════════════════════════ public API ══════
 
     def analyze(
         self,
         results: list[dict[str, Any]],
         topic:   str = "",
     ) -> dict[str, Any]:
-        """
-        Analyse ranked results and produce a structured debate frame.
 
-        Args:
-            results: Output of ScorerService.score() or any result list with
-                     at least title / snippet / url / platform fields.
-            topic:   The research question or query string.
-
-        Returns:
-            {
-                "topic":              str,
-                "debate_type":        str,
-                "side_a":             {label, argument, stance, key_claims,
-                                       signal_words, sources},
-                "side_b":             {same},
-                "neutral":            {sources, key_claims},
-                "agreement_points":   list[str],
-                "disagreement_points":list[str],
-                "conclusion":         str,
-                "debate_intensity":   float,   # 0-1
-                "llm_prompt_context": str,
-                "metadata":           dict,
-            }
-        """
         if not results:
             return self._empty_debate(topic)
 
-        # ── 1. Enrich every source with stance + claims ───────────────────────
         records = [self._enrich(r) for r in results]
 
-        # ── 2. Detect debate type ─────────────────────────────────────────────
         debate_type = self._detect_debate_type(records, topic)
 
-        # ── 3. Partition sources into pro / con / neutral ─────────────────────
         pro_recs     = [r for r in records if r.stance_label == "pro"]
         con_recs     = [r for r in records if r.stance_label == "con"]
         neutral_recs = [r for r in records if r.stance_label == "neutral"]
 
-        # Fallback: if one side is empty, split neutrals by engagement
         if not pro_recs or not con_recs:
             pro_recs, con_recs, neutral_recs = self._rebalance(
                 pro_recs, con_recs, neutral_recs
             )
 
-        # ── 4. Find agreement / disagreement points ───────────────────────────
         all_pro_claims = [c for r in pro_recs for c in r.key_claims]
         all_con_claims = [c for r in con_recs for c in r.key_claims]
 
         agreement_points    = self._find_agreements(all_pro_claims, all_con_claims)
         disagreement_points = self._find_disagreements(pro_recs, con_recs)
 
-        # ── 5. Build debate sides ─────────────────────────────────────────────
         side_a = self._build_side(pro_recs, "pro",  "Supporters / Pro",  debate_type)
         side_b = self._build_side(con_recs, "con",  "Critics / Con",     debate_type)
 
@@ -255,16 +176,13 @@ class DebateService:
             ))[:self.max_claims_per_side],
         }
 
-        # ── 6. Compute debate intensity ───────────────────────────────────────
         intensity = self._debate_intensity(pro_recs, con_recs, disagreement_points)
 
-        # ── 7. Generate conclusion ────────────────────────────────────────────
         conclusion = self._build_conclusion(
             topic, side_a, side_b, agreement_points,
             disagreement_points, debate_type, intensity,
         )
 
-        # ── 8. Build LLM prompt context ───────────────────────────────────────
         llm_ctx = self._build_llm_context(
             topic, debate_type, side_a, side_b,
             agreement_points, disagreement_points, conclusion,
@@ -293,22 +211,17 @@ class DebateService:
             },
         }
 
-    # ════════════════════════════════════════════════════════ enrichment ══════
-
     def _enrich(self, result: dict[str, Any]) -> _SourceRecord:
-        """Annotate a single result with stance, signals, and extracted claims."""
+
         title   = _clean_text(result.get("title",   "") or "")
         snippet = _clean_text(result.get("snippet", "") or "")
         text    = f"{title}. {snippet}".lower()
 
-        # Collect matched signal words and phrases
         sig_words   = [w for w in _PRO_WORDS   if re.search(rf"\b{re.escape(w)}\b", text)]
         neg_words   = [w for w in _CON_WORDS   if re.search(rf"\b{re.escape(w)}\b", text)]
         sig_phrases = [p for p in _PRO_PHRASES if p in text]
         neg_phrases = [p for p in _CON_PHRASES if p in text]
 
-        # Score: +0.15 per pro word, -0.15 per con word
-        # +0.25 per pro phrase, -0.25 per con phrase; clamp to [-1, 1]
         raw_score = (
             len(sig_words)   * 0.15
             - len(neg_words) * 0.15
@@ -317,7 +230,6 @@ class DebateService:
         )
         score = max(-1.0, min(1.0, raw_score))
 
-        # Classify
         if score > self.neutral_threshold:
             stance_label = "pro"
         elif score < -self.neutral_threshold:
@@ -325,7 +237,6 @@ class DebateService:
         else:
             stance_label = "neutral"
 
-        # Detect internal contrast (snippet mentions both sides)
         has_contrast = any(m in text for m in _CONTRAST_MARKERS)
 
         return _SourceRecord(
@@ -345,33 +256,25 @@ class DebateService:
         )
 
     def _extract_claims(self, title: str, snippet: str) -> list[str]:
-        """
-        Pull up to 3 candidate claim sentences from a result.
 
-        Strategy:
-          1. The title is almost always a claim.
-          2. First full sentence of the snippet (usually the thesis).
-          3. Any sentence containing a strong signal word.
-        """
         claims: list[str] = []
 
         if title and len(title) >= self.min_claim_len:
             claims.append(title)
 
-        # Split snippet into sentences
         sentences = re.split(r"(?<=[.!?])\s+", snippet)
         for sent in sentences:
             sent = sent.strip()
             if len(sent) < self.min_claim_len:
                 continue
-            # Strong signal present in this sentence
+
             low = sent.lower()
             if any(re.search(rf"\b{re.escape(w)}\b", low) for w in
                    list(_PRO_WORDS)[:10] + list(_CON_WORDS)[:10]):
                 if sent not in claims:
                     claims.append(sent)
             elif not claims or len(claims) == 1:
-                # Take the first substantive sentence even without signals
+
                 claims.append(sent)
 
             if len(claims) >= 3:
@@ -379,16 +282,9 @@ class DebateService:
 
         return claims[:3]
 
-    # ══════════════════════════════════════════════════════ debate type ════════
-
     @staticmethod
     def _detect_debate_type(records: list[_SourceRecord], topic: str) -> str:
-        """
-        Classify the kind of debate using frequency of type-specific markers.
 
-        Priority order: comparison → controversy → temporal → methodological
-        Defaults to 'controversy' when nothing is clear.
-        """
         all_text = topic.lower() + " " + " ".join(
             r.title.lower() + " " + r.snippet.lower() for r in records
         )
@@ -401,13 +297,10 @@ class DebateService:
             )
             type_scores[dtype] = score
 
-        # Priority tiebreak
         priority = ["comparison", "controversy", "temporal", "methodological"]
         winner   = max(priority, key=lambda t: (type_scores.get(t, 0), -priority.index(t)))
 
         return winner if type_scores.get(winner, 0) > 0 else "controversy"
-
-    # ═══════════════════════════════════════════════════════ rebalancing ══════
 
     @staticmethod
     def _rebalance(
@@ -415,14 +308,10 @@ class DebateService:
         con:     list[_SourceRecord],
         neutral: list[_SourceRecord],
     ) -> tuple[list[_SourceRecord], list[_SourceRecord], list[_SourceRecord]]:
-        """
-        When one side has no sources, split neutrals by engagement to create
-        a meaningful comparison rather than a one-sided output.
-        """
+
         if not neutral:
             return pro, con, neutral
 
-        # Sort neutrals by score descending; top half → pro, bottom → con
         ranked = sorted(neutral, key=lambda r: r.stance_score, reverse=True)
         mid    = max(1, len(ranked) // 2)
 
@@ -435,23 +324,17 @@ class DebateService:
 
         return pro, con, neutral
 
-    # ═════════════════════════════════════════════════════ agreement / diff ════
-
     def _find_agreements(
         self,
         pro_claims: list[str],
         con_claims: list[str],
     ) -> list[str]:
-        """
-        Find phrases that appear in both sides' claims — shared ground.
-        Uses normalised keyword overlap above a Jaccard-like threshold.
-        """
+
         agreements: list[str] = []
         pro_ngrams = self._ngrams_from_claims(pro_claims)
         con_ngrams = self._ngrams_from_claims(con_claims)
         common     = pro_ngrams & con_ngrams
 
-        # Reconstruct readable phrases from common bigrams/trigrams
         already: set[str] = set()
         for pro_c in pro_claims:
             words = _tokenize(pro_c)
@@ -471,22 +354,15 @@ class DebateService:
         pro_recs: list[_SourceRecord],
         con_recs: list[_SourceRecord],
     ) -> list[str]:
-        """
-        Find explicit points of disagreement:
-          - Opposing stance words on the same topic token
-          - Different recommendations (method markers)
-          - Factual numeric discrepancies
-        """
+
         points: list[str] = []
 
-        # Collect dominant topic words from each side's claims
         pro_words = _dominant_words([c for r in pro_recs for c in r.key_claims])
         con_words = _dominant_words([c for r in con_recs for c in r.key_claims])
 
-        # Find topic tokens exclusive to each side
         shared_topics = pro_words.keys() & con_words.keys()
         for topic_word in list(shared_topics)[:3]:
-            # Check if one side uses pro-signal and other uses con-signal near it
+
             pro_context = " ".join(
                 c.lower() for r in pro_recs for c in r.key_claims
                 if topic_word in c.lower()
@@ -505,7 +381,6 @@ class DebateService:
                     f"supporters highlight benefits while critics flag concerns"
                 )
 
-        # Detect contrasting method mentions
         pro_methods = _extract_method_mentions(pro_recs)
         con_methods = _extract_method_mentions(con_recs)
         diff_methods = pro_methods.symmetric_difference(con_methods)
@@ -515,19 +390,17 @@ class DebateService:
                 + " vs. ".join(list(diff_methods)[:2])
             )
 
-        # Detect numeric/statistical conflicts
         num_conflicts = self._detect_numeric_conflicts(pro_recs, con_recs)
         points.extend(num_conflicts[:2])
 
-        return list(dict.fromkeys(points))[:5]   # unique, capped at 5
+        return list(dict.fromkeys(points))[:5]
 
     @staticmethod
     def _detect_numeric_conflicts(
         pro_recs: list[_SourceRecord],
         con_recs: list[_SourceRecord],
     ) -> list[str]:
-        """Surface cases where pro and con cite different numbers on the same claim."""
-        # Extract (label, number) pairs from each side
+
         def extract_numbers(recs: list[_SourceRecord]) -> list[tuple[str, float]]:
             out = []
             pattern = re.compile(r"(\d+(?:\.\d+)?)\s*(%|x|times|percent|points?)", re.I)
@@ -543,7 +416,7 @@ class DebateService:
         conflicts = []
         for pro_label, pro_val in pro_nums[:3]:
             for con_label, con_val in con_nums[:3]:
-                # Same order of magnitude, but > 20% relative difference
+
                 if pro_val != 0 and abs(pro_val - con_val) / max(abs(pro_val), 1) > 0.20:
                     conflicts.append(
                         f"Numeric discrepancy: sources cite different figures "
@@ -552,8 +425,6 @@ class DebateService:
                     break
         return conflicts[:2]
 
-    # ════════════════════════════════════════════════════════ side builder ════
-
     def _build_side(
         self,
         recs:       list[_SourceRecord],
@@ -561,19 +432,13 @@ class DebateService:
         label:      str,
         debate_type: str,
     ) -> DebateSide:
-        """
-        Assemble a DebateSide from a set of source records.
-        The argument is synthesised from key claims using connective phrases —
-        no LLM required; ready for LLM polishing later.
-        """
-        # Sort by engagement then by absolute stance score
+
         sorted_recs = sorted(
             recs,
             key=lambda r: (r.engagement, abs(r.stance_score)),
             reverse=True,
         )[:self.max_sources_per_side]
 
-        # Collect and deduplicate claims
         all_claims: list[str] = []
         seen: set[str]        = set()
         for r in sorted_recs:
@@ -585,7 +450,6 @@ class DebateService:
 
         top_claims = all_claims[:self.max_claims_per_side]
 
-        # Collect signal words across this side
         all_signals = list(dict.fromkeys(
             w for r in sorted_recs for w in r.signal_words
         ))[:8]
@@ -607,13 +471,7 @@ class DebateService:
         stance:     str,
         debate_type: str,
     ) -> str:
-        """
-        Weave extracted claims into a coherent paragraph without LLM.
 
-        Uses connective phrases appropriate to stance and debate type.
-        The output is intentionally readable but not polished — the LLM
-        enrichment layer will refine it.
-        """
         if not claims:
             return "No strong claims detected for this side."
 
@@ -640,7 +498,7 @@ class DebateService:
         for i, claim in enumerate(claims[:4]):
             if i == 0:
                 prefix = starters[i % len(starters)]
-                # Lowercase first char unless it's an acronym (e.g. "AI", "GPT")
+
                 first_word = (claim.split() or [""])[0]
                 if first_word and not first_word.isupper():
                     claim_body = claim[0].lower() + claim[1:]
@@ -653,42 +511,28 @@ class DebateService:
 
         return " ".join(parts)
 
-    # ══════════════════════════════════════════════════════ intensity ══════════
-
     @staticmethod
     def _debate_intensity(
         pro_recs:   list[_SourceRecord],
         con_recs:   list[_SourceRecord],
         disagreements: list[str],
     ) -> float:
-        """
-        Debate intensity score (0-1).
 
-        Components:
-          - Balance: closer to 50/50 split → higher tension
-          - Average absolute stance score on each side
-          - Number of explicit disagreement points
-        """
         total = len(pro_recs) + len(con_recs)
         if total == 0:
             return 0.0
 
-        # Balance (1 = perfect 50/50, 0 = all on one side)
         balance = 1.0 - abs(len(pro_recs) - len(con_recs)) / total
 
-        # Average polarity strength
         avg_polarity = 0.0
         if pro_recs or con_recs:
             scores = [abs(r.stance_score) for r in pro_recs + con_recs]
             avg_polarity = sum(scores) / len(scores)
 
-        # Disagreement point bonus (each point adds 0.1, capped at 0.3)
         disagree_bonus = min(len(disagreements) * 0.10, 0.30)
 
         intensity = balance * 0.40 + avg_polarity * 0.40 + disagree_bonus * 0.20
         return min(1.0, intensity)
-
-    # ════════════════════════════════════════════════ conclusion + LLM ctx ════
 
     def _build_conclusion(
         self,
@@ -700,10 +544,7 @@ class DebateService:
         debate_type:   str,
         intensity:     float,
     ) -> str:
-        """
-        Rule-based balanced conclusion.
-        Intentionally concise — the LLM will expand and refine it.
-        """
+
         topic_str = f'on "{topic}"' if topic else "on this topic"
         n_a, n_b  = len(side_a.sources), len(side_b.sources)
 
@@ -750,13 +591,7 @@ class DebateService:
         disagreements: list[str],
         conclusion:    str,
     ) -> str:
-        """
-        Pre-formatted multi-section string ready to be injected into an LLM
-        system prompt or user message.  The LLM should be instructed to:
-          - Expand and polish each side's argument
-          - Identify which side has stronger evidence
-          - Propose a nuanced resolution or open question
-        """
+
         src_block = lambda sources: "\n".join(
             f"  - [{s['platform']}] {s['title']} — {s['url']}"
             for s in sources[:4]
@@ -813,8 +648,6 @@ class DebateService:
             4. One open question that this debate does not yet resolve.
         """).strip()
 
-    # ═══════════════════════════════════════════════════════════ utilities ════
-
     @staticmethod
     def _to_source_dict(r: _SourceRecord) -> dict[str, Any]:
         return {
@@ -865,23 +698,18 @@ class DebateService:
             "llm_prompt_context": "", "metadata": {},
         }
 
-
-# ──────────────────────────────────────────────── helpers ────────────────────
-
 def _clean_text(text: str) -> str:
     text = re.sub(r"<[^>]+>", "", text)
     text = re.sub(r"\s+", " ", text)
     return text.strip()
 
-
 def _tokenize(text: str) -> list[str]:
-    """Lowercase word tokens, stripping hedge words and punctuation."""
+
     words = re.findall(r"[a-z]+", text.lower())
     return [w for w in words if w not in _HEDGE_WORDS and len(w) > 2]
 
-
 def _dominant_words(claims: list[str]) -> Counter:
-    """Top content words from a list of claim strings."""
+
     skip = {"the", "a", "an", "is", "are", "was", "were", "be", "has",
             "have", "had", "that", "this", "it", "in", "of", "to",
             "for", "on", "with", "as", "by", "at", "from", "and", "or"}
@@ -892,9 +720,8 @@ def _dominant_words(claims: list[str]) -> Counter:
     ]
     return Counter(words)
 
-
 def _extract_method_mentions(recs: list[_SourceRecord]) -> set[str]:
-    """Collect method/tool/framework names from claims (capitalised nouns)."""
+
     pattern = re.compile(r"\b([A-Z][a-zA-Z]{2,}(?:[-\s][A-Z][a-zA-Z]+)?)\b")
     methods: set[str] = set()
     for r in recs:
@@ -904,15 +731,13 @@ def _extract_method_mentions(recs: list[_SourceRecord]) -> set[str]:
                     methods.add(m)
     return methods
 
-
-# ─────────────────────────────────────────── smoke test ──────────────────────
 if __name__ == "__main__":
     import json
 
     ds = DebateService()
 
     results = [
-        # Pro-AI / positive sources
+
         {
             "title":    "AI outperforms human doctors in cancer detection study",
             "snippet":  "A landmark study demonstrates that the AI system achieves 94.5% accuracy, "
@@ -937,7 +762,7 @@ if __name__ == "__main__":
             "url":      "https://openai.com/research/gpt4-medical",
             "platform": "News", "engagement": 950, "author": "OpenAI", "date": "2024-12-15",
         },
-        # Anti-AI / critical sources
+
         {
             "title":    "AI diagnostic tools show dangerous racial bias, study warns",
             "snippet":  "Researchers find that AI models trained on biased datasets consistently "
@@ -962,7 +787,7 @@ if __name__ == "__main__":
             "url":      "https://thelancet.com/physicians-warning",
             "platform": "News", "engagement": 880, "author": "Medical Council", "date": "2025-02-28",
         },
-        # Neutral / mixed
+
         {
             "title":    "AI in healthcare: a balanced review of evidence",
             "snippet":  "This systematic review examines 120 studies on AI clinical tools. "

@@ -1,21 +1,5 @@
-"""
-ScorerService — intelligent multi-factor result ranking with full explainability.
 
-Scoring formula  (total = 100 pts):
-    45 pts  semantic similarity   cosine similarity via sentence-transformers
-    20 pts  source authority      platform tier + trusted-domain bonus
-    15 pts  freshness             exponential time-decay from publish date
-    15 pts  engagement            log-normalised across the result set
-     5 pts  intent match          platform–intent alignment table
 
-All five raw scores live in [0, 1].  Multiplying by the weight × 100 gives
-the point contribution.  The sum is the final confidence (0–100).
-
-Output per result:
-    confidence       : float  — total weighted score, 0-100
-    reasons          : list[str] — human-readable justifications
-    _score_breakdown : dict   — per-component raw + weighted values for auditing
-"""
 from __future__ import annotations
 
 import math
@@ -26,9 +10,6 @@ from typing import Any
 import numpy as np
 from sentence_transformers import SentenceTransformer
 
-
-# ─────────────────────────────────────── scoring constants ───────────────────
-
 _WEIGHTS: dict[str, float] = {
     "semantic":   0.45,
     "authority":  0.20,
@@ -37,37 +18,33 @@ _WEIGHTS: dict[str, float] = {
     "intent":     0.05,
 }
 
-# Base authority score per platform (0-1)
 _PLATFORM_AUTHORITY: dict[str, float] = {
-    "Arxiv":         1.00,   # peer-reviewed preprints
-    "GitHub":        0.90,   # primary source code
-    "Wikipedia":     0.85,   # curated encyclopaedia
-    "StackOverflow": 0.80,   # expert-verified Q&A
-    "News":          0.65,   # quality varies by outlet
-    "Reddit":        0.50,   # community, unverified
-    "Blog":          0.40,   # fully variable quality
+    "Arxiv":         1.00,
+    "GitHub":        0.90,
+    "Wikipedia":     0.85,
+    "StackOverflow": 0.80,
+    "News":          0.65,
+    "Reddit":        0.50,
+    "Blog":          0.40,
 }
 _DEFAULT_AUTHORITY = 0.50
 
-# Domains that earn a +0.10 authority bonus (capped at 1.0)
 _TRUSTED_DOMAINS: frozenset[str] = frozenset({
-    # Academic / scientific publishers
+
     "nature.com", "science.org", "thelancet.com", "cell.com",
     "ieee.org", "acm.org", "springer.com", "sciencedirect.com",
     "plos.org", "nih.gov", "ncbi.nlm.nih.gov",
-    # Elite universities
+
     "mit.edu", "stanford.edu", "harvard.edu", "ox.ac.uk", "cam.ac.uk",
-    # Top-tier tech journalism
+
     "wired.com", "arstechnica.com", "techcrunch.com", "thenextweb.com",
-    # Established news wire
+
     "reuters.com", "apnews.com", "bbc.com", "theguardian.com", "nytimes.com",
-    # AI / ML orgs
+
     "openai.com", "deepmind.com", "anthropic.com", "huggingface.co",
     "paperswithcode.com",
 })
 
-# Per-intent, per-platform alignment score (0-1).
-# Missing platform → 0.3 (neutral).
 _INTENT_PLATFORM: dict[str, dict[str, float]] = {
     "coding": {
         "GitHub":        1.0,
@@ -106,52 +83,27 @@ _INTENT_PLATFORM: dict[str, dict[str, float]] = {
 }
 _INTENT_NEUTRAL = 0.30
 
-# Freshness: half-life in days (score = 0.5 when content is this old)
 _HALF_LIFE_DAYS  = 60.0
-_FRESHNESS_FLOOR = 0.10   # minimum score for very old content
-_NO_DATE_SCORE   = 0.40   # neutral when no publish date is available
+_FRESHNESS_FLOOR = 0.10
+_NO_DATE_SCORE   = 0.40
 
-# Explainability thresholds
 _SEM_HIGH  = 0.70
 _SEM_MID   = 0.40
 _AUTH_HIGH = 0.85
 _AUTH_MID  = 0.65
-_FRES_WEEK = 0.95    # ~< 4 days old at half_life=60
-_FRES_MONTH= 0.75    # ~< 17 days old
-_FRES_FAIR = 0.55    # ~< 35 days old
+_FRES_WEEK = 0.95
+_FRES_MONTH= 0.75
+_FRES_FAIR = 0.55
 _ENG_HIGH  = 0.70
 _ENG_MID   = 0.35
 _INT_HIGH  = 0.80
 _INT_MID   = 0.50
 
-
-# ═══════════════════════════════════════════════════════ ScorerService ════════
-
 class ScorerService:
-    """
-    Ranks search results using semantic similarity plus four structural signals.
-
-    Integration example:
-        analyzer = AnalyzerService()
-        fs       = FilterService()
-        scorer   = ScorerService()
-
-        raw    = await analyzer.fetch_all("transformer architecture")
-        meta   = fs.preprocess("transformer architecture")
-        clean  = fs.postfilter(raw["results"], intent=meta["intent"])
-        ranked = scorer.score("transformer architecture",
-                              clean["results"],
-                              intent=meta["intent"])
-    """
 
     def __init__(self, model_name: str = "all-MiniLM-L6-v2") -> None:
-        """
-        Loads the sentence-transformer model once at construction time.
-        The model is ~80 MB and is cached by the HuggingFace hub on first use.
-        """
-        self.model = SentenceTransformer(model_name)
 
-    # ════════════════════════════════════════════════════════════ public API ══
+        self.model = SentenceTransformer(model_name)
 
     def score(
         self,
@@ -159,39 +111,25 @@ class ScorerService:
         results: list[dict[str, Any]],
         intent: str = "research",
     ) -> list[dict[str, Any]]:
-        """
-        Score and rank results for a given query.
 
-        Args:
-            query:   Raw or pre-cleaned search query.
-            results: List of result dicts in AnalyzerService / FilterService schema.
-            intent:  Query intent string from FilterService.preprocess().
-
-        Returns:
-            All items annotated with 'confidence', 'reasons', '_score_breakdown',
-            sorted by confidence descending.  No items are removed.
-        """
         if not results:
             return []
 
-        # ── batch encode: query at index 0, result texts at indices 1+ ───────
         texts = [self._result_text(r) for r in results]
         all_embeddings = self.model.encode(
             [query] + texts,
-            normalize_embeddings=True,   # L2-norm → cosine = dot product
+            normalize_embeddings=True,
             show_progress_bar=False,
             batch_size=64,
         )
         query_emb   = all_embeddings[0]
         result_embs = all_embeddings[1:]
 
-        # ── log-normalise engagement across the full set ──────────────────────
         max_log_eng = max(
             math.log1p(max(0, int(r.get("engagement") or 0)))
             for r in results
         ) or 1.0
 
-        # ── score each result ─────────────────────────────────────────────────
         scored: list[dict[str, Any]] = []
         for item, emb in zip(results, result_embs):
             copy      = dict(item)
@@ -205,32 +143,13 @@ class ScorerService:
         scored.sort(key=lambda x: x["confidence"], reverse=True)
         return self._diversify(scored)
 
-    # ════════════════════════════════════════════════════════ diversity re-rank ═
-
     @staticmethod
     def _diversify(
         scored: list[dict[str, Any]],
         penalty_per_extra: float = 0.08,
         max_penalty_steps: int   = 4,
     ) -> list[dict[str, Any]]:
-        """
-        Prevent any single platform from dominating the ranked list.
 
-        Walk results in confidence order (best-first). The first result from
-        each platform keeps its score. Each subsequent result from the same
-        platform loses `penalty_per_extra * 100` points per occurrence, capped
-        at `max_penalty_steps` steps so very deep duplicates don't go negative.
-
-        Example with penalty_per_extra=0.08:
-          Wikipedia #1  83.1 → 83.1  (no penalty)
-          Wikipedia #2  77.4 → 69.4  (−8 pts)
-          Wikipedia #3  75.2 → 59.2  (−16 pts)
-          Wikipedia #4  74.6 → 50.6  (−24 pts)
-          Wikipedia #5+ → fixed −32 pts max
-
-        After penalties, the list is re-sorted so higher-confidence results
-        from under-represented platforms surface above penalised ones.
-        """
         platform_counts: dict[str, int] = {}
 
         for item in scored:
@@ -250,8 +169,6 @@ class ScorerService:
         scored.sort(key=lambda x: x["confidence"], reverse=True)
         return scored
 
-    # ════════════════════════════════════════════════════════════ scoring ══════
-
     def _breakdown(
         self,
         query_emb:  np.ndarray,
@@ -260,18 +177,7 @@ class ScorerService:
         intent:     str,
         max_log_eng: float,
     ) -> dict[str, dict[str, float]]:
-        """
-        Compute all five sub-scores and return the weighted breakdown.
 
-        Returns:
-            {
-                "semantic":   {"raw": 0.82, "weighted": 36.90},
-                "authority":  {"raw": 0.90, "weighted": 18.00},
-                "freshness":  {"raw": 0.75, "weighted": 11.25},
-                "engagement": {"raw": 0.50, "weighted":  7.50},
-                "intent":     {"raw": 1.00, "weighted":  5.00},
-            }
-        """
         components = {
             "semantic":   self._semantic(query_emb, result_emb),
             "authority":  self._authority(item),
@@ -287,32 +193,14 @@ class ScorerService:
             for name, raw in components.items()
         }
 
-    # ── 1. Semantic similarity ─────────────────────────────────────────────────
-
     @staticmethod
     def _semantic(query_emb: np.ndarray, result_emb: np.ndarray) -> float:
-        """
-        Cosine similarity between the query and the concatenated title+snippet.
 
-        Because both embeddings are L2-normalised their dot product equals
-        cosine similarity exactly — no division needed, O(d) per pair.
-
-        Negative similarity (antonyms / off-topic) is clamped to 0.0 rather
-        than penalising: the other factors already downweigh bad results.
-        """
         return float(max(0.0, min(1.0, np.dot(query_emb, result_emb))))
-
-    # ── 2. Source authority ────────────────────────────────────────────────────
 
     @staticmethod
     def _authority(item: dict[str, Any]) -> float:
-        """
-        Base score from the platform tier table, optionally boosted (+0.10)
-        when the result's domain appears in the trusted-domain list.
 
-        Apex-domain matching (stripping subdomains) prevents  sub.nature.com
-        from escaping the boost.
-        """
         platform = (item.get("platform") or "").strip()
         base     = _PLATFORM_AUTHORITY.get(platform, _DEFAULT_AUTHORITY)
 
@@ -323,20 +211,9 @@ class ScorerService:
 
         return base
 
-    # ── 3. Freshness ──────────────────────────────────────────────────────────
-
     @staticmethod
     def _freshness(item: dict[str, Any]) -> float:
-        """
-        Exponential half-life decay:
 
-            score = 2^( -days_old / HALF_LIFE )
-
-        Half-life is 60 days — content published 2 months ago scores 0.50.
-        A floor of 0.10 ensures ancient but authoritative content is not
-        completely nullified by the freshness factor.
-        Missing or unparseable dates receive a neutral 0.40.
-        """
         date_str = (item.get("date") or "").strip()
         if not date_str:
             return _NO_DATE_SCORE
@@ -353,35 +230,17 @@ class ScorerService:
         raw = 2.0 ** (-days_old / _HALF_LIFE_DAYS)
         return max(_FRESHNESS_FLOOR, min(1.0, raw))
 
-    # ── 4. Engagement ─────────────────────────────────────────────────────────
-
     @staticmethod
     def _engagement(item: dict[str, Any], max_log_eng: float) -> float:
-        """
-        Log-normalised engagement score:
 
-            score = log(1 + eng) / log(1 + max_eng)
-
-        Log-scale compresses the long tail of viral posts (a post with 10 000
-        upvotes should not be 100× more useful than one with 100 upvotes).
-        Normalising against the set maximum keeps scores in [0, 1].
-        """
         eng = max(0, int(item.get("engagement") or 0))
         return math.log1p(eng) / max_log_eng
 
-    # ── 5. Intent match ───────────────────────────────────────────────────────
-
     @staticmethod
     def _intent(item: dict[str, Any], intent: str) -> float:
-        """
-        Returns how well the result's source platform aligns with the query
-        intent.  Neutral default (0.30) avoids zero-multiplying the 5 pt
-        weight for platforms not listed under an intent.
-        """
+
         platform = (item.get("platform") or "").strip()
         return _INTENT_PLATFORM.get(intent, {}).get(platform, _INTENT_NEUTRAL)
-
-    # ════════════════════════════════════════════════════════ explainability ══
 
     @staticmethod
     def _explain(
@@ -389,13 +248,7 @@ class ScorerService:
         item:      dict[str, Any],
         intent:    str,
     ) -> list[str]:
-        """
-        Produce human-readable reason strings.
 
-        Rules are threshold-based so reasons only appear when a component
-        makes a genuinely notable contribution.  Weaknesses are surfaced too
-        (e.g. "low semantic match") so the caller can understand outliers.
-        """
         reasons: list[str] = []
         platform = (item.get("platform") or "").strip()
         domain   = (item.get("quality") or {}).get("domain", "") or ""
@@ -408,7 +261,6 @@ class ScorerService:
         eng  = breakdown["engagement"]["raw"]
         intn = breakdown["intent"]["raw"]
 
-        # ── semantic ──────────────────────────────────────────────────────────
         if sem >= _SEM_HIGH:
             reasons.append("high semantic relevance")
         elif sem >= _SEM_MID:
@@ -416,7 +268,6 @@ class ScorerService:
         else:
             reasons.append("low semantic match")
 
-        # ── authority ─────────────────────────────────────────────────────────
         if auth >= _AUTH_HIGH:
             tag = f"trusted platform ({platform})"
             if trusted:
@@ -427,7 +278,6 @@ class ScorerService:
         elif trusted:
             reasons.append(f"authoritative domain ({domain})")
 
-        # ── freshness ─────────────────────────────────────────────────────────
         if fres >= _FRES_WEEK:
             reasons.append("published this week")
         elif fres >= _FRES_MONTH:
@@ -439,13 +289,11 @@ class ScorerService:
         else:
             reasons.append("older content")
 
-        # ── engagement ────────────────────────────────────────────────────────
         if eng >= _ENG_HIGH:
             reasons.append("highly engaged community")
         elif eng >= _ENG_MID:
             reasons.append("notable community engagement")
 
-        # ── intent ────────────────────────────────────────────────────────────
         if intn >= _INT_HIGH:
             reasons.append(f"strong platform–intent fit ({intent} → {platform})")
         elif intn >= _INT_MID:
@@ -453,15 +301,9 @@ class ScorerService:
 
         return reasons
 
-    # ══════════════════════════════════════════════════════════ utilities ══════
-
     @staticmethod
     def _result_text(item: dict[str, Any]) -> str:
-        """
-        Concatenate title and snippet into one string for the encoder.
-        The separator '. ' lets the model treat them as two sentences,
-        which gives better embeddings than a bare space join.
-        """
+
         title   = (item.get("title")   or "").strip()
         snippet = (item.get("snippet") or "").strip()
         if title and snippet:
@@ -470,10 +312,7 @@ class ScorerService:
 
     @staticmethod
     def _parse_date(date_str: str) -> datetime | None:
-        """
-        Parse ISO-8601 and common date strings.
-        Handles the 'Z' suffix (Python < 3.11 does not accept it in fromisoformat).
-        """
+
         cleaned = date_str.strip().replace("Z", "+00:00")
         try:
             return datetime.fromisoformat(cleaned)
@@ -492,8 +331,6 @@ class ScorerService:
                 continue
         return None
 
-
-# ──────────────────────────────────────────── smoke test ─────────────────────
 if __name__ == "__main__":
     from datetime import timedelta
 

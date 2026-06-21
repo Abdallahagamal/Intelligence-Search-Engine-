@@ -1,19 +1,5 @@
-"""
-AI Research Engine — Starlette ASGI application.
 
-Note: Written with Starlette directly instead of FastAPI because pydantic v2
-is incompatible with Python 3.14 beta.  The API surface is identical.
-Run:  uvicorn app:app --reload
 
-Full pipeline per request:
-  1. ResearchAgent   → intent detection + research plan
-  2. AnalyzerService → parallel multi-source fetch
-  3. FilterService   → soft annotation (flags, quality, duplicates)
-  4. ScorerService   → semantic + structural ranking
-  5. DebateService   → pro/con conflict detection        (optional)
-  6. GraphService    → knowledge graph extraction        (optional)
-  7. LLMService      → Gemini synthesis                  (optional)
-"""
 from __future__ import annotations
 
 import logging
@@ -47,10 +33,7 @@ except ImportError:
 logging.basicConfig(level=logging.INFO, format="%(levelname)s  %(name)s  %(message)s")
 logger = logging.getLogger("app")
 
-# ─────────────────────────────────────────── service singletons ──────────────
-
 _services: dict[str, Any] = {}
-
 
 @asynccontextmanager
 async def lifespan(app: Starlette):
@@ -65,7 +48,6 @@ async def lifespan(app: Starlette):
     _services["debate"]   = DebateService()
     _services["graph"]    = GraphService(min_entity_freq=1, max_nodes=40)
 
-    # ScorerService downloads ~80 MB model on first run — done once here
     try:
         _services["scorer"] = ScorerService(model_name="all-MiniLM-L6-v2")
         logger.info("ScorerService ready  (all-MiniLM-L6-v2)")
@@ -73,7 +55,6 @@ async def lifespan(app: Starlette):
         logger.warning("ScorerService unavailable: %s", exc)
         _services["scorer"] = None
 
-    # LLMService requires GEMINI_API_KEY — gracefully optional
     llm_key = os.environ.get("GEMINI_API_KEY", "")
     if _llm_class_available and llm_key:
         try:
@@ -92,23 +73,16 @@ async def lifespan(app: Starlette):
     _services.clear()
     logger.info("Shutdown complete.")
 
-
-# ──────────────────────────────────────────────────── helpers ────────────────
-
 _ALL_SOURCES = ["reddit", "github", "arxiv", "stackoverflow", "wikipedia", "news"]
-
 
 def _svc(name: str) -> Any:
     return _services.get(name)
 
-
 def _ms(start: float) -> int:
     return int((time.perf_counter() - start) * 1000)
 
-
 def _bad(message: str, status: int = 422) -> JSONResponse:
     return JSONResponse({"detail": message}, status_code=status)
-
 
 def _parse_max_results(body: dict, default: int = 50, cap: int = 200) -> int | JSONResponse:
     raw = body.get("max_results", default)
@@ -118,13 +92,11 @@ def _parse_max_results(body: dict, default: int = 50, cap: int = 200) -> int | J
         return _bad(f"'max_results' must be an integer, got: {raw!r}")
     return min(max(value, 1), cap)
 
-
 async def _parse_body(request: Request) -> dict | JSONResponse:
     try:
         return await request.json()
     except Exception:
         return JSONResponse({"detail": "Invalid JSON body."}, status_code=400)
-
 
 async def _run_pipeline(
     query:          str,
@@ -138,7 +110,6 @@ async def _run_pipeline(
     timing:  dict[str, int] = {}
     errors:  dict[str, Any] = {}
 
-    # 1. Plan ─────────────────────────────────────────────────────────────────
     t0   = time.perf_counter()
     plan = _svc("agent").plan(query)
     timing["plan_ms"] = _ms(t0)
@@ -146,7 +117,6 @@ async def _run_pipeline(
     intent           = plan.get("intent", "research")
     resolved_sources = sources or list(plan.get("source_weights", {}).keys()) or _ALL_SOURCES
 
-    # 2. Fetch ────────────────────────────────────────────────────────────────
     t0 = time.perf_counter()
     try:
         raw_output   = await _svc("analyzer").fetch_all(query, sources=resolved_sources)
@@ -171,7 +141,6 @@ async def _run_pipeline(
             },
         }
 
-    # 3. Filter ───────────────────────────────────────────────────────────────
     t0 = time.perf_counter()
     try:
         filter_out     = _svc("filter").postfilter(raw_results, intent=intent)
@@ -188,7 +157,6 @@ async def _run_pipeline(
         errors["filter"] = str(exc)
     timing["filter_ms"] = _ms(t0)
 
-    # 4. Score ────────────────────────────────────────────────────────────────
     t0     = time.perf_counter()
     scorer = _svc("scorer")
     if scorer and clean_results:
@@ -203,7 +171,6 @@ async def _run_pipeline(
     ranked_results = ranked[:max_results]
     timing["score_ms"] = _ms(t0)
 
-    # 5. Debate ───────────────────────────────────────────────────────────────
     debate_out: dict | None = None
     debate_svc = _svc("debate")
     if include_debate and debate_svc and ranked_results:
@@ -217,7 +184,6 @@ async def _run_pipeline(
     elif include_debate and not debate_svc:
         errors["debate"] = "DebateService unavailable."
 
-    # 6. Graph ────────────────────────────────────────────────────────────────
     graph_out: dict | None = None
     graph_svc = _svc("graph")
     if include_graph and graph_svc and ranked_results:
@@ -231,7 +197,6 @@ async def _run_pipeline(
     elif include_graph and not graph_svc:
         errors["graph"] = "GraphService unavailable."
 
-    # 7. LLM synthesis ────────────────────────────────────────────────────────
     llm_out: dict | None = None
     llm_svc = _svc("llm")
     if include_llm and llm_svc and ranked_results:
@@ -270,14 +235,8 @@ async def _run_pipeline(
         },
     }
 
-
-# ──────────────────────────────────────────────────── route handlers ──────────
-
 async def health(request: Request) -> JSONResponse:
-    """
-    GET /
-    Health check and capability report.
-    """
+
     return JSONResponse({
         "status": "ok",
         "services": {
@@ -287,20 +246,8 @@ async def health(request: Request) -> JSONResponse:
         "note": "Set GEMINI_API_KEY env var to enable LLM synthesis.",
     })
 
-
 async def research(request: Request) -> JSONResponse:
-    """
-    POST /research
-    Full 7-stage research pipeline.
 
-    Body (JSON):
-        query           str       required
-        sources         list[str] optional  (default: all 6 platforms)
-        include_debate  bool      optional  (default: true)
-        include_graph   bool      optional  (default: true)
-        include_llm     bool      optional  (default: true)
-        max_results     int       optional  (default: 50, max: 200)
-    """
     body = await _parse_body(request)
     if isinstance(body, JSONResponse):
         return body
@@ -324,15 +271,8 @@ async def research(request: Request) -> JSONResponse:
     )
     return JSONResponse(result)
 
-
 async def research_plan(request: Request) -> JSONResponse:
-    """
-    POST /research/plan
-    Return the autonomous research plan without fetching any sources.
 
-    Body (JSON):
-        query  str  required
-    """
     body = await _parse_body(request)
     if isinstance(body, JSONResponse):
         return body
@@ -349,17 +289,8 @@ async def research_plan(request: Request) -> JSONResponse:
         "description": agent.describe(plan),
     })
 
-
 async def research_sources(request: Request) -> JSONResponse:
-    """
-    POST /research/sources
-    Fetch + filter + score only — no debate, graph, or LLM.
 
-    Body (JSON):
-        query        str       required
-        sources      list[str] optional
-        max_results  int       optional
-    """
     body = await _parse_body(request)
     if isinstance(body, JSONResponse):
         return body
@@ -382,17 +313,8 @@ async def research_sources(request: Request) -> JSONResponse:
     )
     return JSONResponse(result)
 
-
 async def research_debate(request: Request) -> JSONResponse:
-    """
-    POST /research/debate
-    Fetch + filter + rank + debate analysis (no graph or LLM).
 
-    Body (JSON):
-        query        str       required
-        sources      list[str] optional
-        max_results  int       optional
-    """
     body = await _parse_body(request)
     if isinstance(body, JSONResponse):
         return body
@@ -415,18 +337,8 @@ async def research_debate(request: Request) -> JSONResponse:
     )
     return JSONResponse(result)
 
-
 async def research_graph(request: Request) -> JSONResponse:
-    """
-    POST /research/graph
-    Fetch + filter + rank + knowledge graph (no debate or LLM).
-    Returns React Flow-compatible nodes and edges.
 
-    Body (JSON):
-        query        str       required
-        sources      list[str] optional
-        max_results  int       optional
-    """
     body = await _parse_body(request)
     if isinstance(body, JSONResponse):
         return body
@@ -449,18 +361,13 @@ async def research_graph(request: Request) -> JSONResponse:
     )
     return JSONResponse(result)
 
-
 async def webhook(request: Request) -> JSONResponse:
-    """
-    POST /hook
-    Generic inbound webhook receiver (preserved from original app).
-    """
+
     try:
         data = await request.json()
     except Exception:
         data = {}
     return JSONResponse({"message": "Webhook received successfully!", "received": data})
-
 
 async def openapi_schema(request: Request) -> JSONResponse:
     schema = {
@@ -602,7 +509,6 @@ async def openapi_schema(request: Request) -> JSONResponse:
     }
     return JSONResponse(schema)
 
-
 async def swagger_ui(request: Request) -> HTMLResponse:
     html = """<!DOCTYPE html>
 <html>
@@ -630,17 +536,12 @@ async def swagger_ui(request: Request) -> HTMLResponse:
 </html>"""
     return HTMLResponse(html)
 
-
 async def not_found(request: Request, exc: Exception) -> JSONResponse:
     return JSONResponse({"detail": "Not found."}, status_code=404)
-
 
 async def server_error(request: Request, exc: Exception) -> JSONResponse:
     logger.error("Unhandled error on %s: %s", request.url.path, exc, exc_info=True)
     return JSONResponse({"detail": "Internal server error.", "error": str(exc)}, status_code=500)
-
-
-# ──────────────────────────────────────────────────── application ────────────
 
 app = Starlette(
     debug=False,
