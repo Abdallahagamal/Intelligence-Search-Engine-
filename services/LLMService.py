@@ -71,7 +71,7 @@ _RESPONSE_SCHEMA = """
 
 class LLMService:
 
-    def __init__(self, api_key: str | None = None, model_name: str = "qwen-qwq-32b") -> None:
+    def __init__(self, api_key: str | None = None, model_name: str = "llama-3.3-70b-versatile") -> None:
         resolved_key = api_key or os.environ.get("GROQ_API_KEY", "")
         if not resolved_key:
             raise ValueError(
@@ -205,8 +205,8 @@ class LLMService:
                     {"role": "system", "content": system},
                     {"role": "user",   "content": prompt},
                 ],
-                temperature=0.6,
-                max_tokens=8192,
+                temperature=0.1,
+                max_tokens=2048,
             )
             raw = response.choices[0].message.content or ""
             return self._parse_json(raw)

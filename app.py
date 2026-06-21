@@ -59,7 +59,7 @@ async def lifespan(app: Starlette):
     if _llm_class_available and llm_key:
         try:
             _services["llm"] = LLMService(api_key=llm_key)
-            logger.info("LLMService ready  (groq / qwen-qwq-32b)")
+            logger.info("LLMService ready  (groq / llama-3.3-70b-versatile)")
         except Exception as exc:
             logger.warning("LLMService unavailable: %s", exc)
             _services["llm"] = None
