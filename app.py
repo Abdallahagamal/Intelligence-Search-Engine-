@@ -105,6 +105,7 @@ async def _run_pipeline(
     include_debate: bool,
     include_graph:  bool,
     include_llm:    bool,
+    pre_fetched:    list[dict] | None = None,
 ) -> dict[str, Any]:
     t_total = time.perf_counter()
     timing:  dict[str, int] = {}
@@ -117,17 +118,22 @@ async def _run_pipeline(
     intent           = plan.get("intent", "research")
     resolved_sources = sources or list(plan.get("source_weights", {}).keys()) or _ALL_SOURCES
 
-    t0 = time.perf_counter()
-    try:
-        raw_output   = await _svc("analyzer").fetch_all(query, sources=resolved_sources)
-        raw_results  = raw_output.get("results", [])
-        fetch_errors = raw_output.get("errors", {})
-    except Exception as exc:
-        logger.error("AnalyzerService failed: %s", exc)
-        return {"error": f"Source fetch failed: {exc}", "query": query}
-    timing["fetch_ms"] = _ms(t0)
-    if fetch_errors:
-        errors["fetch"] = fetch_errors
+    if pre_fetched is not None:
+        raw_results      = pre_fetched
+        resolved_sources = list({r.get("platform", "unknown") for r in raw_results})
+        timing["fetch_ms"] = 0
+    else:
+        t0 = time.perf_counter()
+        try:
+            raw_output   = await _svc("analyzer").fetch_all(query, sources=resolved_sources)
+            raw_results  = raw_output.get("results", [])
+            fetch_errors = raw_output.get("errors", {})
+        except Exception as exc:
+            logger.error("AnalyzerService failed: %s", exc)
+            return {"error": f"Source fetch failed: {exc}", "query": query}
+        timing["fetch_ms"] = _ms(t0)
+        if fetch_errors:
+            errors["fetch"] = fetch_errors
 
     if not raw_results:
         return {
@@ -361,6 +367,35 @@ async def research_graph(request: Request) -> JSONResponse:
     )
     return JSONResponse(result)
 
+async def analyze(request: Request) -> JSONResponse:
+
+    body = await _parse_body(request)
+    if isinstance(body, JSONResponse):
+        return body
+
+    query = str(body.get("query", "")).strip()
+    if len(query) < 2:
+        return _bad("'query' must be at least 2 characters.")
+
+    results = body.get("results")
+    if not isinstance(results, list) or not results:
+        return _bad("'results' must be a non-empty array of source objects.")
+
+    max_results = _parse_max_results(body)
+    if isinstance(max_results, JSONResponse):
+        return max_results
+
+    result = await _run_pipeline(
+        query          = query,
+        sources        = None,
+        max_results    = max_results,
+        include_debate = bool(body.get("include_debate", True)),
+        include_graph  = bool(body.get("include_graph",  True)),
+        include_llm    = bool(body.get("include_llm",    True)),
+        pre_fetched    = results,
+    )
+    return JSONResponse(result)
+
 async def webhook(request: Request) -> JSONResponse:
 
     try:
@@ -453,6 +488,19 @@ async def openapi_schema(request: Request) -> JSONResponse:
                     "responses": {"200": {"description": "Knowledge graph (nodes + edges)"}},
                 }
             },
+            "/analyze": {
+                "post": {
+                    "summary": "Analyze pre-fetched results",
+                    "description": "Skip the fetch stage — send your own results array and get back filter → score → debate → graph → LLM synthesis. Use this when your backend already fetched the sources.",
+                    "operationId": "analyze",
+                    "tags": ["Research"],
+                    "requestBody": {
+                        "required": True,
+                        "content": {"application/json": {"schema": {"$ref": "#/components/schemas/AnalyzeRequest"}}},
+                    },
+                    "responses": {"200": {"description": "Full intelligence pipeline result"}},
+                }
+            },
             "/hook": {
                 "post": {
                     "summary": "Inbound webhook",
@@ -487,6 +535,35 @@ async def openapi_schema(request: Request) -> JSONResponse:
                             "example": ["arxiv", "github", "wikipedia"],
                         },
                         "max_results": {"type": "integer", "default": 50, "minimum": 1, "maximum": 200, "example": 15},
+                    },
+                },
+                "SourceItem": {
+                    "type": "object",
+                    "required": ["title", "url", "platform"],
+                    "properties": {
+                        "title":      {"type": "string", "example": "Attention Is All You Need"},
+                        "snippet":    {"type": "string", "example": "We propose the Transformer architecture..."},
+                        "url":        {"type": "string", "example": "https://arxiv.org/abs/1706.03762"},
+                        "platform":   {"type": "string", "example": "Arxiv", "enum": ["Arxiv", "GitHub", "Wikipedia", "StackOverflow", "News", "Reddit"]},
+                        "date":       {"type": "string", "example": "2024-01-15T00:00:00Z"},
+                        "author":     {"type": "string", "example": "Vaswani et al."},
+                        "engagement": {"type": "integer", "example": 500},
+                    },
+                },
+                "AnalyzeRequest": {
+                    "type": "object",
+                    "required": ["query", "results"],
+                    "properties": {
+                        "query": {"type": "string", "example": "transformer neural networks", "minLength": 2},
+                        "results": {
+                            "type": "array",
+                            "items": {"$ref": "#/components/schemas/SourceItem"},
+                            "minItems": 1,
+                        },
+                        "max_results":    {"type": "integer", "default": 50, "minimum": 1, "maximum": 200},
+                        "include_debate": {"type": "boolean", "default": True},
+                        "include_graph":  {"type": "boolean", "default": True},
+                        "include_llm":    {"type": "boolean", "default": True},
                     },
                 },
                 "ResearchRequest": {
@@ -554,6 +631,7 @@ app = Starlette(
         Route("/research/sources", research_sources, methods=["POST"]),
         Route("/research/debate",  research_debate,  methods=["POST"]),
         Route("/research/graph",   research_graph,   methods=["POST"]),
+        Route("/analyze",          analyze,          methods=["POST"]),
         Route("/hook",             webhook,          methods=["POST"]),
     ],
     exception_handlers={404: not_found, 500: server_error},
