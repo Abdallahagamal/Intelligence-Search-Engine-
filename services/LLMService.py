@@ -198,21 +198,18 @@ class LLMService:
         prompt: str,
         system: str,
     ) -> dict[str, Any] | None:
-        try:
-            response = await self._client.chat.completions.create(
-                model=self._model_name,
-                messages=[
-                    {"role": "system", "content": system},
-                    {"role": "user",   "content": prompt},
-                ],
-                temperature=0.1,
-                max_tokens=2048,
-            )
-            raw = response.choices[0].message.content or ""
-            return self._parse_json(raw)
-        except Exception as exc:
-            logger.error("Groq API error: %s", exc)
-            return None
+        response = await self._client.chat.completions.create(
+            model=self._model_name,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user",   "content": prompt},
+            ],
+            temperature=0.1,
+            max_tokens=2048,
+        )
+        raw = response.choices[0].message.content or ""
+        logger.info("Groq raw response (%d chars): %.300s", len(raw), raw)
+        return self._parse_json(raw)
 
     @staticmethod
     def _parse_json(raw: str) -> dict[str, Any] | None:

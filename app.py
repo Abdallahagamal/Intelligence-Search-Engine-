@@ -269,14 +269,14 @@ async def _run_pipeline(
     }
 
 async def health(request: Request) -> JSONResponse:
-
+    llm = _svc("llm")
     return JSONResponse({
         "status": "ok",
         "services": {
             name: _svc(name) is not None
             for name in ("analyzer", "filter", "scorer", "agent", "debate", "graph", "llm")
         },
-        "note": "Set GEMINI_API_KEY env var to enable LLM synthesis.",
+        "llm_model": getattr(llm, "_model_name", None),
     })
 
 async def research(request: Request) -> JSONResponse:
