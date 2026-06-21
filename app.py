@@ -175,12 +175,29 @@ async def _run_pipeline(
     else:
         ranked = clean_results
 
-    main_keywords = {w.lower() for w in query.split() if len(w) > 2}
+    _STOP = {
+        "use", "the", "and", "for", "are", "but", "not", "you", "all", "any",
+        "can", "had", "has", "its", "out", "was", "who", "did", "how", "let",
+        "may", "say", "she", "too", "why", "does", "per", "via", "yet",
+        "should", "would", "could", "will", "what", "when", "where", "which",
+        "this", "that", "with", "from", "into", "have", "been", "than", "then",
+        "them", "they", "there", "their", "about", "some", "also", "just",
+        "like", "over", "such", "much", "even", "well", "only", "most", "both",
+        "each", "very", "need", "make", "time", "know", "take", "good", "best",
+        "want", "look", "come", "give", "work", "long", "down", "back", "going",
+        "being", "using", "getting", "having", "making", "doing",
+    }
+    main_keywords = {
+        w.lower() for w in query.split()
+        if len(w) > 2 and w.lower() not in _STOP
+    }
     def _is_relevant(r: dict) -> bool:
         if r.get("confidence", 0) >= 50:
             return True
-        text = f"{r.get('title', '')} {r.get('snippet', '')}".lower()
-        return any(kw in text for kw in main_keywords)
+        if not main_keywords:
+            return True
+        title = (r.get("title") or "").lower()
+        return any(kw in title for kw in main_keywords)
 
     ranked = [r for r in ranked if _is_relevant(r)]
     ranked_results = ranked[:max_results]

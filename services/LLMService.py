@@ -205,8 +205,8 @@ class LLMService:
                     {"role": "system", "content": system},
                     {"role": "user",   "content": prompt},
                 ],
-                temperature=0.1,
-                max_tokens=2048,
+                temperature=0.6,
+                max_tokens=8192,
             )
             raw = response.choices[0].message.content or ""
             return self._parse_json(raw)
