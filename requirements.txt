@@ -2,7 +2,7 @@ starlette
 uvicorn
 python-dotenv
 httpx
-google-genai
+groq
 sentence-transformers
 numpy
 rapidfuzz

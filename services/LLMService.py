@@ -6,8 +6,7 @@ import os
 import re
 from typing import Any
 
-from google import genai
-from google.genai import types
+from groq import AsyncGroq
 
 logger = logging.getLogger(__name__)
 
@@ -22,13 +21,13 @@ _FALLBACK: dict[str, Any] = {
 _SYSTEM_INSTRUCTION = (
     "You are an expert research analyst. "
     "Answer the user's question directly and concisely using ONLY the provided sources. "
-    "Be specific — never vague. Output ONLY valid JSON. No extra text."
+    "Be specific — never vague. Output ONLY valid JSON. No extra text, no markdown fences."
 )
 
 _RETRY_INSTRUCTION = (
     "You are an expert research analyst. "
     "Answer directly using ONLY the provided sources. "
-    "Return ONLY valid JSON. No explanation, no markdown."
+    "Return ONLY valid JSON. No explanation, no markdown, no preamble."
 )
 
 _INTENT_INSTRUCTIONS: dict[str, str] = {
@@ -72,13 +71,13 @@ _RESPONSE_SCHEMA = """
 
 class LLMService:
 
-    def __init__(self, api_key: str | None = None, model_name: str = "gemini-2.5-flash-lite") -> None:
-        resolved_key = api_key or os.environ.get("GEMINI_API_KEY", "")
+    def __init__(self, api_key: str | None = None, model_name: str = "qwen-qwq-32b") -> None:
+        resolved_key = api_key or os.environ.get("GROQ_API_KEY", "")
         if not resolved_key:
             raise ValueError(
-                "Gemini API key required. Pass api_key= or set GEMINI_API_KEY env var."
+                "Groq API key required. Pass api_key= or set GROQ_API_KEY env var."
             )
-        self._client = genai.Client(api_key=resolved_key)
+        self._client = AsyncGroq(api_key=resolved_key)
         self._model_name = model_name
 
     async def generate_research_response(
@@ -94,11 +93,11 @@ class LLMService:
 
         prompt = self._build_prompt(query, ranked_sources, debate_results, research_graph, intent)
 
-        result = await self._call_gemini(prompt, system=_SYSTEM_INSTRUCTION)
+        result = await self._call_groq(prompt, system=_SYSTEM_INSTRUCTION)
         if result is None:
-            result = await self._call_gemini(prompt, system=_RETRY_INSTRUCTION)
+            result = await self._call_groq(prompt, system=_RETRY_INSTRUCTION)
         if result is None:
-            logger.warning("Gemini returned invalid JSON twice; using fallback.")
+            logger.warning("Groq returned invalid JSON twice; using fallback.")
             return dict(_FALLBACK)
 
         return self._validate_and_fill(result)
@@ -188,37 +187,40 @@ class LLMService:
             "- Surface conflicts between sources; do not smooth them over.\n"
             "- trends must be specific themes (e.g. 'React dominates job market 2025'), not generic labels.\n"
             "- related_questions must be natural follow-up questions a curious user would ask.\n"
-            "- Output ONLY the JSON object below. No markdown. No preamble.\n\n"
+            "- Output ONLY the JSON object below. No markdown. No preamble. No <think> blocks.\n\n"
             f"REQUIRED OUTPUT SCHEMA:\n{_RESPONSE_SCHEMA}"
         )
 
         return "\n\n".join(sections)
 
-    async def _call_gemini(
+    async def _call_groq(
         self,
         prompt: str,
         system: str,
     ) -> dict[str, Any] | None:
         try:
-            response = await self._client.aio.models.generate_content(
+            response = await self._client.chat.completions.create(
                 model=self._model_name,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    system_instruction=system,
-                    temperature=0.1,
-                    top_p=0.95,
-                    max_output_tokens=2048,
-                ),
+                messages=[
+                    {"role": "system", "content": system},
+                    {"role": "user",   "content": prompt},
+                ],
+                temperature=0.1,
+                max_tokens=2048,
             )
-            raw = response.text or ""
+            raw = response.choices[0].message.content or ""
             return self._parse_json(raw)
         except Exception as exc:
-            logger.error("Gemini API error: %s", exc)
+            logger.error("Groq API error: %s", exc)
             return None
 
     @staticmethod
     def _parse_json(raw: str) -> dict[str, Any] | None:
         raw = raw.strip()
+
+        # Strip <think>...</think> blocks (QwQ reasoning model outputs these)
+        raw = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
+
         try:
             return json.loads(raw)
         except json.JSONDecodeError:

@@ -55,17 +55,17 @@ async def lifespan(app: Starlette):
         logger.warning("ScorerService unavailable: %s", exc)
         _services["scorer"] = None
 
-    llm_key = os.environ.get("GEMINI_API_KEY", "")
+    llm_key = os.environ.get("GROQ_API_KEY", "")
     if _llm_class_available and llm_key:
         try:
             _services["llm"] = LLMService(api_key=llm_key)
-            logger.info("LLMService ready  (gemini-2.5-flash-lite)")
+            logger.info("LLMService ready  (groq / qwen-qwq-32b)")
         except Exception as exc:
             logger.warning("LLMService unavailable: %s", exc)
             _services["llm"] = None
     else:
         if not llm_key:
-            logger.warning("GEMINI_API_KEY not set — LLM synthesis disabled.")
+            logger.warning("GROQ_API_KEY not set — LLM synthesis disabled.")
         _services["llm"] = None
 
     logger.info("All services initialized.")
