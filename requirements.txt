@@ -1,0 +1,20 @@
+# Web framework (app.py uses Starlette directly, not FastAPI)
+starlette
+uvicorn
+
+# Async HTTP client (AnalyzerService — fetches GitHub, arXiv, SO, News, Wikipedia)
+httpx
+
+# LLM synthesis (LLMService — requires GEMINI_API_KEY env var)
+google-genai
+
+# Semantic scoring (ScorerService — downloads ~80 MB model on first run)
+sentence-transformers
+numpy
+
+# Fuzzy duplicate detection (FilterService — optional, falls back to exact-URL matching)
+rapidfuzz
+
+# Named-entity extraction for knowledge graph (GraphService — optional, falls back to regex)
+# After installing run: python -m spacy download en_core_web_sm
+spacy==3.7.5

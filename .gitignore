@@ -1,0 +1,28 @@
+# Secrets — never commit
+.env
+*.env
+.env.*
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# IDE / OS
+.DS_Store
+.claude/
+*.code-workspace
+.vscode/
+.idea/
+
+# Build / dist
+*.egg-info/
+dist/
+build/

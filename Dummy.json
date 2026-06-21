@@ -1,0 +1,88 @@
+[
+  {
+    "id": 1,
+    "source": "reddit",
+    "title": "How do I start learning Machine Learning in 2026?",
+    "content": "I know basic Python but I feel overwhelmed by the number of courses available. Should I start with mathematics first or jump directly into machine learning?",
+    "upvotes": 248,
+    "comments": 52
+  },
+  {
+    "id": 2,
+    "source": "reddit",
+    "title": "Comment",
+    "content": "Start with Andrew Ng's Machine Learning Specialization. Learn NumPy, Pandas and Scikit-Learn, then build 2-3 projects before moving to deep learning.",
+    "upvotes": 180,
+    "comments": 0
+  },
+  {
+    "id": 3,
+    "source": "reddit",
+    "title": "Comment",
+    "content": "Thanks!",
+    "upvotes": 2,
+    "comments": 0
+  },
+  {
+    "id": 4,
+    "source": "reddit",
+    "title": "Comment",
+    "content": "Following.",
+    "upvotes": 1,
+    "comments": 0
+  },
+  {
+    "id": 5,
+    "source": "github",
+    "title": "Machine Learning Roadmap",
+    "content": "A complete roadmap for learning machine learning, covering Python, mathematics, statistics, supervised learning, deep learning, MLOps and project ideas.",
+    "stars": 18500,
+    "forks": 3200
+  },
+  {
+    "id": 6,
+    "source": "github",
+    "title": "Awesome Machine Learning",
+    "content": "Curated list of machine learning frameworks, libraries, tutorials, papers, courses and tools maintained by the community.",
+    "stars": 72000,
+    "forks": 14000
+  },
+  {
+    "id": 7,
+    "source": "github",
+    "title": "Random ML Scripts",
+    "content": "Collection of experimental scripts I wrote while learning Python.",
+    "stars": 3,
+    "forks": 0
+  },
+  {
+    "id": 8,
+    "source": "arxiv",
+    "title": "A Survey of Large Language Models",
+    "content": "This paper reviews the architecture, training methods, evaluation benchmarks and applications of modern large language models.",
+    "citations": 1200
+  },
+  {
+    "id": 9,
+    "source": "arxiv",
+    "title": "Machine Learning for Beginners",
+    "content": "An educational review explaining supervised learning, unsupervised learning, model evaluation and common beginner mistakes.",
+    "citations": 85
+  },
+  {
+    "id": 10,
+    "source": "reddit",
+    "title": "Is mathematics necessary for machine learning?",
+    "content": "Many beginners get stuck trying to learn all of linear algebra before starting ML. How much math is actually required?",
+    "upvotes": 412,
+    "comments": 89
+  },
+  {
+    "id": 11,
+    "source": "reddit",
+    "title": "Comment",
+    "content": "Learn the basics of linear algebra and probability as you go. Don't spend six months studying math before touching any ML project.",
+    "upvotes": 250,
+    "comments": 0
+  }
+]
