@@ -174,6 +174,15 @@ async def _run_pipeline(
             errors["scorer"] = str(exc)
     else:
         ranked = clean_results
+
+    main_keywords = {w.lower() for w in query.split() if len(w) > 2}
+    def _is_relevant(r: dict) -> bool:
+        if r.get("confidence", 0) >= 50:
+            return True
+        text = f"{r.get('title', '')} {r.get('snippet', '')}".lower()
+        return any(kw in text for kw in main_keywords)
+
+    ranked = [r for r in ranked if _is_relevant(r)]
     ranked_results = ranked[:max_results]
     timing["score_ms"] = _ms(t0)
 
@@ -213,6 +222,7 @@ async def _run_pipeline(
                 ranked_sources = ranked_results,
                 debate_results = debate_out,
                 research_graph = graph_out,
+                intent         = intent,
             )
         except Exception as exc:
             logger.warning("LLMService error: %s", exc)

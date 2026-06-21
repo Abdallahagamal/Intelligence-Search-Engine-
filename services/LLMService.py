@@ -20,24 +20,53 @@ _FALLBACK: dict[str, Any] = {
 }
 
 _SYSTEM_INSTRUCTION = (
-    "You are a deterministic AI research synthesis engine. "
-    "Use ONLY provided sources. "
-    "Output ONLY valid JSON. No extra text."
+    "You are an expert research analyst. "
+    "Answer the user's question directly and concisely using ONLY the provided sources. "
+    "Be specific — never vague. Output ONLY valid JSON. No extra text."
 )
 
 _RETRY_INSTRUCTION = (
-    "You are a deterministic AI research synthesis engine. "
-    "Use ONLY provided sources. "
-    "Return ONLY valid JSON. No explanation."
+    "You are an expert research analyst. "
+    "Answer directly using ONLY the provided sources. "
+    "Return ONLY valid JSON. No explanation, no markdown."
 )
+
+_INTENT_INSTRUCTIONS: dict[str, str] = {
+    "recommendation": (
+        "The user wants a CONCRETE recommendation. "
+        "State clearly which option is best and when to use it. "
+        "Use phrases like 'Choose X if...' or 'X is better when...'. "
+        "Never be vague. Give a direct answer with reasoning."
+    ),
+    "comparison": (
+        "Compare the options point-by-point. "
+        "Be specific: performance, ecosystem, learning curve, use cases. "
+        "End with a clear verdict on which is better for what."
+    ),
+    "coding": (
+        "Focus on practical, actionable implementation details from sources. "
+        "Mention specific APIs, patterns, or steps if referenced. "
+        "Prioritize advice a developer can use immediately."
+    ),
+    "news": (
+        "Report key facts precisely: dates, names, events. "
+        "Distinguish confirmed facts from speculation. "
+        "Prioritize the most recent and authoritative sources."
+    ),
+    "research": (
+        "Synthesize findings across sources, noting agreements and contradictions. "
+        "Cite which source supports each major claim. "
+        "Highlight gaps or uncertainties in the evidence."
+    ),
+}
 
 _RESPONSE_SCHEMA = """
 {
-  "takeaway":          "<3-6 sentence direct answer grounded only in provided sources>",
-  "detailed_answer":   "<deeper explanation merging all sources; include contradictions>",
-  "trends":            ["<theme 1>", "<theme 2>", "..."],
-  "related_questions": ["<question 1>", "<question 2>", "..."],
-  "final_conclusion":  "<balanced synthesis; acknowledge uncertainty where present>"
+  "takeaway":          "<2-4 sentences — DIRECT answer to the question, no hedging>",
+  "detailed_answer":   "<comprehensive answer using all relevant sources; note contradictions>",
+  "trends":            ["<specific trend 1>", "<specific trend 2>", "<specific trend 3>"],
+  "related_questions": ["<follow-up question 1>", "<follow-up question 2>", "<follow-up question 3>"],
+  "final_conclusion":  "<one clear, decisive conclusion the user can act on>"
 }
 """
 
@@ -58,11 +87,12 @@ class LLMService:
         ranked_sources:  list[dict[str, Any]],
         debate_results:  dict[str, Any] | None = None,
         research_graph:  dict[str, Any] | None = None,
+        intent:          str = "research",
     ) -> dict[str, Any]:
         if not ranked_sources:
             return dict(_FALLBACK)
 
-        prompt = self._build_prompt(query, ranked_sources, debate_results, research_graph)
+        prompt = self._build_prompt(query, ranked_sources, debate_results, research_graph, intent)
 
         result = await self._call_gemini(prompt, system=_SYSTEM_INSTRUCTION)
         if result is None:
@@ -79,8 +109,12 @@ class LLMService:
         ranked_sources: list[dict[str, Any]],
         debate_results: dict[str, Any] | None,
         research_graph: dict[str, Any] | None,
+        intent:         str = "research",
     ) -> str:
         sections: list[str] = []
+
+        intent_instruction = _INTENT_INSTRUCTIONS.get(intent, _INTENT_INSTRUCTIONS["research"])
+        sections.append(f"QUERY INTENT: {intent.upper()}\n{intent_instruction}")
 
         sections.append(f"RESEARCH QUERY:\n{query}")
 
@@ -147,10 +181,13 @@ class LLMService:
 
         sections.append(
             "INSTRUCTIONS:\n"
-            "- Base every claim strictly on the RANKED SOURCES above.\n"
+            "- IGNORE any source whose title/snippet is clearly unrelated to the query.\n"
+            "- Base every claim on RANKED SOURCES. Do not invent facts.\n"
+            "- Be DIRECT and SPECIFIC. Avoid vague phrases like 'it depends' without explanation.\n"
             "- If debate_results are present, reflect both sides in detailed_answer.\n"
             "- Surface conflicts between sources; do not smooth them over.\n"
-            "- If evidence is insufficient for a field, write 'insufficient evidence'.\n"
+            "- trends must be specific themes (e.g. 'React dominates job market 2025'), not generic labels.\n"
+            "- related_questions must be natural follow-up questions a curious user would ask.\n"
             "- Output ONLY the JSON object below. No markdown. No preamble.\n\n"
             f"REQUIRED OUTPUT SCHEMA:\n{_RESPONSE_SCHEMA}"
         )
