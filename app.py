@@ -98,6 +98,29 @@ async def _parse_body(request: Request) -> dict | JSONResponse:
     except Exception:
         return JSONResponse({"detail": "Invalid JSON body."}, status_code=400)
 
+def _normalize_dotnet_items(items: list[dict]) -> list[dict]:
+    """
+    Accepts items from the .NET backend and normalizes them to the
+    internal format expected by FilterService, ScorerService, etc.
+    Missing optional fields are filled with safe defaults.
+    The original .NET 'id' and 'score' fields are preserved.
+    """
+    normalized = []
+    for item in items:
+        normalized.append({
+            # preserve .NET id so it can be matched back
+            "id":         item.get("id"),
+            "title":      (item.get("title")   or "").strip(),
+            "snippet":    (item.get("snippet")  or "").strip(),
+            "url":        (item.get("url")      or "").strip(),
+            "platform":   (item.get("platform") or "").strip(),
+            # .NET doesn't supply these — use safe defaults
+            "date":       item.get("date")   or "",
+            "author":     item.get("author")  or "",
+            "engagement": int(item.get("engagement") or item.get("score") or 0),
+        })
+    return normalized
+
 async def _run_pipeline(
     query:          str,
     sources:        list[str] | None,
@@ -119,7 +142,7 @@ async def _run_pipeline(
     resolved_sources = sources or list(plan.get("source_weights", {}).keys()) or _ALL_SOURCES
 
     if pre_fetched is not None:
-        raw_results      = pre_fetched
+        raw_results      = _normalize_dotnet_items(pre_fetched)
         resolved_sources = list({r.get("platform", "unknown") for r in raw_results})
         timing["fetch_ms"] = 0
     else:
@@ -400,11 +423,17 @@ async def analyze(request: Request) -> JSONResponse:
     if isinstance(body, JSONResponse):
         return body
 
-    query = str(body.get("query", "")).strip()
+    data_section = body.get("data")
+    if isinstance(data_section, dict):
+        query = str(data_section.get("query", "")).strip()
+        results = data_section.get("results")
+    else:
+        query = str(body.get("query", "")).strip()
+        results = body.get("results")
+
     if len(query) < 2:
         return _bad("'query' must be at least 2 characters.")
 
-    results = body.get("results")
     if not isinstance(results, list) or not results:
         return _bad("'results' must be a non-empty array of source objects.")
 
@@ -423,6 +452,90 @@ async def analyze(request: Request) -> JSONResponse:
     )
     return JSONResponse(result)
 
+async def rate(request: Request) -> JSONResponse:
+    """
+    Dedicated lightweight endpoint for .NET backends.
+    Accepts the exact response shape that .NET returns, runs the
+    filter -> score pipeline, and returns a compact ranked list
+    with just the fields .NET needs: id, title, url, platform,
+    snippet, confidence, reasons, is_duplicate, intent.
+    """
+    body = await _parse_body(request)
+    if isinstance(body, JSONResponse):
+        return body
+
+    # Support both the full .NET wrapper shape and bare shape
+    data_section = body.get("data")
+    if isinstance(data_section, dict):
+        query   = str(data_section.get("query", "")).strip()
+        results = data_section.get("results")
+    else:
+        query   = str(body.get("query", "")).strip()
+        results = body.get("results")
+
+    if len(query) < 2:
+        return _bad("'query' must be at least 2 characters.")
+    if not isinstance(results, list) or not results:
+        return _bad("'results' must be a non-empty array of source objects.")
+
+    max_results = _parse_max_results(body, default=200, cap=500)
+    if isinstance(max_results, JSONResponse):
+        return max_results
+
+    t_total = time.perf_counter()
+
+    plan   = _svc("agent").plan(query)
+    intent = plan.get("intent", "research")
+
+    normalized = _normalize_dotnet_items(results)
+
+    # --- Filter ---
+    try:
+        filter_out    = _svc("filter").postfilter(normalized, intent=intent)
+        clean_results = filter_out.get("results", normalized)
+        filter_summary = filter_out.get("flags_summary", {})
+    except Exception as exc:
+        logger.warning("FilterService error in /rate: %s", exc)
+        clean_results  = normalized
+        filter_summary = {}
+
+    # --- Score ---
+    scorer = _svc("scorer")
+    if scorer and clean_results:
+        try:
+            ranked = scorer.score(query, clean_results, intent=intent)
+        except Exception as exc:
+            logger.warning("ScorerService error in /rate: %s", exc)
+            ranked = clean_results
+    else:
+        ranked = clean_results
+
+    ranked = ranked[:max_results]
+
+    # Build compact .NET-friendly output
+    rated_items = [
+        {
+            "id":           r.get("id"),
+            "title":        r.get("title", ""),
+            "url":          r.get("url", ""),
+            "platform":     r.get("platform", ""),
+            "snippet":      r.get("snippet", ""),
+            "confidence":   r.get("confidence", 0),
+            "reasons":      r.get("reasons", []),
+            "is_duplicate": r.get("is_duplicate", False),
+        }
+        for r in ranked
+    ]
+
+    return JSONResponse({
+        "query":          query,
+        "intent":         intent,
+        "total":          len(rated_items),
+        "results":        rated_items,
+        "filter_summary": filter_summary,
+        "timing_ms":      int((time.perf_counter() - t_total) * 1000),
+    })
+
 async def webhook(request: Request) -> JSONResponse:
 
     try:
@@ -430,6 +543,7 @@ async def webhook(request: Request) -> JSONResponse:
     except Exception:
         data = {}
     return JSONResponse({"message": "Webhook received successfully!", "received": data})
+
 
 async def openapi_schema(request: Request) -> JSONResponse:
     schema = {
@@ -558,7 +672,7 @@ async def openapi_schema(request: Request) -> JSONResponse:
                         "query": {"type": "string", "example": "transformer neural networks", "minLength": 2},
                         "sources": {
                             "type": "array",
-                            "items": {"type": "string", "enum": ["reddit", "github", "arxiv", "stackoverflow", "wikipedia", "news"]},
+                            "items": {"type": "string", "enum": ["reddit", "github", "arxiv", "stackoverflow", "wikipedia", "news", "hackernews"]},
                             "example": ["arxiv", "github", "wikipedia"],
                         },
                         "max_results": {"type": "integer", "default": 50, "minimum": 1, "maximum": 200, "example": 15},
@@ -571,7 +685,7 @@ async def openapi_schema(request: Request) -> JSONResponse:
                         "title":      {"type": "string", "example": "Attention Is All You Need"},
                         "snippet":    {"type": "string", "example": "We propose the Transformer architecture..."},
                         "url":        {"type": "string", "example": "https://arxiv.org/abs/1706.03762"},
-                        "platform":   {"type": "string", "example": "Arxiv", "enum": ["Arxiv", "GitHub", "Wikipedia", "StackOverflow", "News", "Reddit"]},
+                        "platform":   {"type": "string", "example": "Arxiv", "enum": ["Arxiv", "GitHub", "Wikipedia", "StackOverflow", "News", "Reddit", "HackerNews"]},
                         "date":       {"type": "string", "example": "2024-01-15T00:00:00Z"},
                         "author":     {"type": "string", "example": "Vaswani et al."},
                         "engagement": {"type": "integer", "example": 500},
@@ -600,7 +714,7 @@ async def openapi_schema(request: Request) -> JSONResponse:
                         "query": {"type": "string", "example": "large language models vs traditional ML", "minLength": 2},
                         "sources": {
                             "type": "array",
-                            "items": {"type": "string", "enum": ["reddit", "github", "arxiv", "stackoverflow", "wikipedia", "news"]},
+                            "items": {"type": "string", "enum": ["reddit", "github", "arxiv", "stackoverflow", "wikipedia", "news", "hackernews"]},
                         },
                         "max_results": {"type": "integer", "default": 50, "minimum": 1, "maximum": 200, "example": 15},
                         "include_debate": {"type": "boolean", "default": True},
@@ -659,6 +773,7 @@ app = Starlette(
         Route("/research/debate",  research_debate,  methods=["POST"]),
         Route("/research/graph",   research_graph,   methods=["POST"]),
         Route("/analyze",          analyze,          methods=["POST"]),
+        Route("/rate",             rate,             methods=["POST"]),
         Route("/hook",             webhook,          methods=["POST"]),
     ],
     exception_handlers={404: not_found, 500: server_error},

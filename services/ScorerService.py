@@ -11,21 +11,23 @@ import numpy as np
 from sentence_transformers import SentenceTransformer
 
 _WEIGHTS: dict[str, float] = {
-    "semantic":   0.45,
-    "authority":  0.20,
-    "freshness":  0.15,
-    "engagement": 0.15,
+    "semantic":   0.55,   # up from 0.45 — most reliable signal
+    "authority":  0.25,   # up from 0.20 — platform quality matters
+    "freshness":  0.10,   # down from 0.15 — often missing from .NET
+    "engagement": 0.05,   # down from 0.15 — always 0 from .NET
     "intent":     0.05,
 }
 
 _PLATFORM_AUTHORITY: dict[str, float] = {
-    "Arxiv":         1.00,
-    "GitHub":        0.90,
-    "Wikipedia":     0.85,
-    "StackOverflow": 0.80,
-    "News":          0.65,
-    "Reddit":        0.50,
-    "Blog":          0.40,
+    "arxiv":         1.00,
+    "github":        0.90,
+    "wikipedia":     0.85,
+    "stackoverflow": 0.80,
+    "news":          0.65,
+    "reddit":        0.50,
+    "hackernews":    0.80,
+    "hacker news":   0.80,
+    "blog":          0.40,
 }
 _DEFAULT_AUTHORITY = 0.50
 
@@ -47,45 +49,55 @@ _TRUSTED_DOMAINS: frozenset[str] = frozenset({
 
 _INTENT_PLATFORM: dict[str, dict[str, float]] = {
     "coding": {
-        "GitHub":        1.0,
-        "StackOverflow": 1.0,
-        "Arxiv":         0.4,
-        "Wikipedia":     0.3,
-        "Reddit":        0.5,
+        "github":        1.0,
+        "stackoverflow": 1.0,
+        "arxiv":         0.4,
+        "wikipedia":     0.3,
+        "reddit":        0.5,
+        "hackernews":    0.8,
+        "hacker news":   0.8,
     },
     "research": {
-        "Arxiv":         1.0,
-        "Wikipedia":     0.7,
-        "GitHub":        0.5,
-        "StackOverflow": 0.4,
-        "News":          0.3,
+        "arxiv":         1.0,
+        "wikipedia":     0.7,
+        "github":        0.5,
+        "stackoverflow": 0.4,
+        "news":          0.3,
+        "hackernews":    0.6,
+        "hacker news":   0.6,
     },
     "news": {
-        "News":          1.0,
-        "Reddit":        0.6,
-        "Wikipedia":     0.3,
-        "GitHub":        0.2,
+        "news":          1.0,
+        "reddit":        0.6,
+        "wikipedia":     0.3,
+        "github":        0.2,
+        "hackernews":    0.8,
+        "hacker news":   0.8,
     },
     "comparison": {
-        "Reddit":        0.8,
-        "StackOverflow": 0.8,
-        "Wikipedia":     0.7,
-        "Arxiv":         0.5,
-        "News":          0.5,
+        "reddit":        0.8,
+        "stackoverflow": 0.8,
+        "wikipedia":     0.7,
+        "arxiv":         0.5,
+        "news":          0.5,
+        "hackernews":    0.7,
+        "hacker news":   0.7,
     },
     "recommendation": {
-        "Reddit":        0.9,
-        "StackOverflow": 0.8,
-        "Wikipedia":     0.6,
-        "GitHub":        0.5,
-        "News":          0.4,
+        "reddit":        0.9,
+        "stackoverflow": 0.8,
+        "wikipedia":     0.6,
+        "github":        0.5,
+        "news":          0.4,
+        "hackernews":    0.7,
+        "hacker news":   0.7,
     },
 }
 _INTENT_NEUTRAL = 0.30
 
 _HALF_LIFE_DAYS  = 60.0
 _FRESHNESS_FLOOR = 0.10
-_NO_DATE_SCORE   = 0.40
+_NO_DATE_SCORE   = 0.65   # raised from 0.40 — .NET sources rarely send dates
 
 _SEM_HIGH  = 0.70
 _SEM_MID   = 0.40
@@ -153,15 +165,16 @@ class ScorerService:
         platform_counts: dict[str, int] = {}
 
         for item in scored:
-            platform = (item.get("platform") or "unknown").strip()
-            count    = platform_counts.get(platform, 0)
+            platform_raw = (item.get("platform") or "unknown").strip()
+            platform     = platform_raw.lower()
+            count        = platform_counts.get(platform, 0)
 
             if count > 0:
                 steps   = min(count, max_penalty_steps)
                 penalty = steps * penalty_per_extra * 100
                 item["confidence"] = round(max(0.0, item["confidence"] - penalty), 1)
                 item["reasons"].append(
-                    f"diversity penalty: platform #{count + 1} ({platform})"
+                    f"diversity penalty: platform #{count + 1} ({platform_raw})"
                 )
 
             platform_counts[platform] = count + 1
@@ -201,7 +214,7 @@ class ScorerService:
     @staticmethod
     def _authority(item: dict[str, Any]) -> float:
 
-        platform = (item.get("platform") or "").strip()
+        platform = (item.get("platform") or "").strip().lower()
         base     = _PLATFORM_AUTHORITY.get(platform, _DEFAULT_AUTHORITY)
 
         domain = (item.get("quality") or {}).get("domain", "") or ""
@@ -239,7 +252,7 @@ class ScorerService:
     @staticmethod
     def _intent(item: dict[str, Any], intent: str) -> float:
 
-        platform = (item.get("platform") or "").strip()
+        platform = (item.get("platform") or "").strip().lower()
         return _INTENT_PLATFORM.get(intent, {}).get(platform, _INTENT_NEUTRAL)
 
     @staticmethod
