@@ -72,15 +72,15 @@ export default function DebateCard({ debate }) {
       initial={{ opacity: 0, y: 24 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.6 }}
-      className="rounded-3xl p-7"
+      className="rounded-2xl sm:rounded-3xl p-4 sm:p-7"
       style={{
         background: "rgba(255,255,255,0.03)",
         border: "1px solid rgba(255,255,255,0.07)",
         boxShadow: "0 8px 40px rgba(0,0,0,0.4)",
       }}
     >
-      <div className="flex items-center justify-between mb-2">
-        <h2 className="text-xl font-bold text-white">⚖️ Debate Analysis</h2>
+      <div className="flex flex-wrap items-start sm:items-center justify-between gap-2 mb-2">
+        <h2 className="text-lg sm:text-xl font-bold text-white">⚖️ Debate Analysis</h2>
         <span
           className="text-xs px-3 py-1 rounded-full capitalize"
           style={{ background: "rgba(249,115,22,0.12)", color: "#fb923c" }}

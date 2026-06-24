@@ -41,11 +41,12 @@ function Tooltip({ source, index, onClose }) {
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: 8, scale: 0.95 }}
       transition={{ duration: 0.15 }}
-      className="absolute z-50 w-72 rounded-2xl p-4 shadow-2xl"
+      className="absolute z-50 w-64 sm:w-72 rounded-2xl p-3 sm:p-4 shadow-2xl"
       style={{
         bottom: "calc(100% + 8px)",
         left: "50%",
         transform: "translateX(-50%)",
+        maxWidth: "calc(100vw - 2rem)",
         background: "rgba(12,8,4,0.97)",
         border: "1px solid rgba(249,115,22,0.25)",
         boxShadow: "0 16px 48px rgba(0,0,0,0.8), 0 0 24px rgba(249,115,22,0.08)",
@@ -113,15 +114,15 @@ export default function CitedText({ text, sources }) {
       initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4 }}
-      className="rounded-3xl p-7"
+      className="rounded-2xl sm:rounded-3xl p-4 sm:p-7"
       style={{
         background: "rgba(255,255,255,0.03)",
         border: "1px solid rgba(255,255,255,0.07)",
       }}
     >
-      <h2 className="text-xl font-bold text-white mb-5">✍️ AI Synthesis</h2>
+      <h2 className="text-lg sm:text-xl font-bold text-white mb-3 sm:mb-5">✍️ AI Synthesis</h2>
 
-      <p className="text-slate-200 text-base leading-8">
+      <p className="text-slate-200 text-sm sm:text-base leading-7 sm:leading-8">
         {cited.map((chunk, i) => {
           const num = chunk.srcIdx >= 0 ? indexMap[chunk.srcIdx] : -1;
           return (

@@ -40,11 +40,16 @@ export default function SourceCard({
       className="
         source-card-in
         relative
-        rounded-r-2xl
-        rounded-bl-2xl
-        px-6
-        pt-8
-        pb-5
+        rounded-r-lg
+        sm:rounded-r-2xl
+        rounded-bl-lg
+        sm:rounded-bl-2xl
+        px-4
+        sm:px-6
+        pt-6
+        sm:pt-8
+        pb-4
+        sm:pb-5
         transition-all
         duration-300
         hover:-translate-y-1
@@ -69,13 +74,16 @@ export default function SourceCard({
           z-10
           flex
           items-center
-          gap-1.5
-          px-3
+          gap-1
+          sm:gap-1.5
+          px-2
+          sm:px-3
           pt-[5px]
           pb-1
           rounded-tr-md
           rounded-br-md
-          text-[10.5px]
+          text-[8.5px]
+          sm:text-[10.5px]
           font-semibold
           uppercase
           tracking-wider
@@ -87,29 +95,35 @@ export default function SourceCard({
           color: accent,
         }}
       >
-        <Icon size={12} style={{ color: accent }} />
-        {platform}
+        <Icon size={10} style={{ color: accent }} className="sm:size-3" />
+        <span className="hidden sm:inline">{platform}</span>
+        <span className="sm:hidden">{platform.slice(0, 3)}</span>
       </div>
 
       {/* Eyebrow — mono meta line */}
       <div
-        className="relative text-[11.5px] text-slate-500 mb-2.5 mt-1"
+        className="relative text-[10px] sm:text-[11.5px] text-slate-500 mb-1.5 sm:mb-2.5 mt-1"
         style={{ fontFamily: '"Space Grotesk", monospace' }}
       >
-        {platform.toLowerCase()}.com · <span className="text-slate-300">{time}</span>
+        <span className="hidden sm:inline">{platform.toLowerCase()}.com · </span>
+        <span className="text-slate-300 text-[9px] sm:text-base">{time}</span>
       </div>
 
       {/* Title */}
       <h3
         className="
           relative
-          text-xl
+          text-base
+          sm:text-xl
           md:text-[21px]
           font-semibold
           text-white
-          leading-snug
-          mb-3
+          leading-tight
+          sm:leading-snug
+          mb-2
+          sm:mb-3
           tracking-tight
+          line-clamp-2
         "
         style={{ fontFamily: '"Sora", serif' }}
       >
@@ -117,7 +131,7 @@ export default function SourceCard({
       </h3>
 
       {/* Description */}
-      <p className="relative text-[14.5px] leading-7 text-slate-400 mb-4">
+      <p className="relative text-xs sm:text-[14.5px] leading-5 sm:leading-7 text-slate-400 mb-3 sm:mb-4 line-clamp-2 sm:line-clamp-none">
         Research result collected from {platform}. This source contains
         relevant information that contributed to the generated answer.
       </p>
@@ -127,26 +141,32 @@ export default function SourceCard({
         className="
           relative
           flex
-          items-center
+          flex-col
+          sm:flex-row
+          items-start
+          sm:items-center
           justify-between
-          pt-3.5
+          pt-2.5
+          sm:pt-3.5
           border-t
           border-white/10
+          gap-2
+          sm:gap-0
         "
       >
         <a
           href={link}
           target="_blank"
           rel="noreferrer"
-          className="text-[12.5px] font-medium hover:underline transition-colors"
+          className="text-[11px] sm:text-[12.5px] font-medium hover:underline transition-colors truncate"
           style={{ color: accent, fontFamily: '"Space Grotesk", monospace' }}
         >
           Open on {platform} ↗
         </a>
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3 sm:gap-4 flex-shrink-0">
           <span
-            className="text-[11px] text-slate-500"
+            className="text-[10px] sm:text-[11px] text-slate-500"
             style={{ fontFamily: '"Space Grotesk", monospace' }}
           >
             {confidence} match
@@ -158,11 +178,12 @@ export default function SourceCard({
               setCopied(true);
               setTimeout(() => setCopied(false), 2000);
             }}
-            className="text-slate-500 transition-colors"
+            className="text-slate-500 transition-colors hover:text-white p-2 -m-2"
+            title="Copy to clipboard"
             onMouseEnter={(e) => (e.currentTarget.style.color = accent)}
             onMouseLeave={(e) => (e.currentTarget.style.color = "")}
           >
-            {copied ? <FaCheck style={{ color: accent }} /> : <FaCopy />}
+            {copied ? <FaCheck size={14} style={{ color: accent }} /> : <FaCopy size={14} />}
           </button>
         </div>
       </div>

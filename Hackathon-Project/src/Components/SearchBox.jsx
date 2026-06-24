@@ -12,7 +12,7 @@ export default function SearchBox({
 }) {
   const [openSources, setOpenSources] = useState(false);
   return (
-     <div className="w-full max-w-3xl mx-auto">
+     <div className="w-full max-w-3xl mx-auto px-2 sm:px-4 md:px-0">
       <div className="relative">
         {glow && <div className="glow-border" />}
 
@@ -28,47 +28,62 @@ export default function SearchBox({
             backdrop-blur-xl
             border
             border-white/5
-            rounded-3xl
+            rounded-2xl
+            sm:rounded-3xl
             shadow-[0_8px_40px_rgba(0,0,0,0.55)]
-            p-2.5
+            p-2
+            sm:p-2.5
             flex
             flex-col
-            gap-2.5
+            gap-2
+            sm:gap-2.5
             mb-4
+            w-full
           "
         >
           <input
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Paste an idea, topic, research question..."
+            placeholder="Paste an idea or question..."
             className="
               w-full
               bg-transparent
               outline-none
               text-white
-              text-base
+              text-sm
+              sm:text-base
               px-2
+              py-2
+              sm:py-3
               placeholder:text-slate-500
+              md:placeholder:text-base
             "
           />
 
-          <div className="flex items-center justify-end">
-            <div className="flex items-center gap-2">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-2">
+            <div className="flex items-center gap-2 flex-1 sm:flex-none">
 
-              <div className="relative">
+              <div className="relative w-full sm:w-auto">
                 <button
                   type="button"
                   onClick={() => setOpenSources(!openSources)}
                   className="
+                    w-full
+                    sm:w-auto
                     flex
                     items-center
+                    justify-between
+                    sm:justify-center
                     gap-2
-                    px-4
-                    py-1.5
+                    px-3
+                    sm:px-4
+                    py-2
+                    sm:py-1.5
                     rounded-full
                     text-white/80
-                    text-sm
+                    text-xs
+                    sm:text-sm
                     font-medium
                     tracking-wide
                     border
@@ -76,16 +91,20 @@ export default function SearchBox({
                     hover:border-white/20
                     hover:text-white
                     transition-all
+                    min-h-[44px]
+                    sm:min-h-auto
                   "
                   style={{
                     background: "rgba(255,255,255,0.06)",
                     backdropFilter: "blur(12px)",
                   }}
                 >
-                  Sources ({sources.filter((s) => s.enabled).length})
+                  <span className="whitespace-nowrap">
+                    Sources ({sources.filter((s) => s.enabled).length})
+                  </span>
                   <FaChevronDown
                     size={11}
-                    className={`transition-transform duration-300 ${openSources ? "rotate-180" : ""}`}
+                    className={`transition-transform duration-300 flex-shrink-0 ${openSources ? "rotate-180" : ""}`}
                   />
                 </button>
 
@@ -94,13 +113,19 @@ export default function SearchBox({
                     className="
                       absolute
                       right-0
+                      left-0
+                      sm:right-0
+                      sm:left-auto
                       top-full
-                      mt-3
-                      w-80
+                      mt-2
+                      sm:mt-3
+                      w-full
+                      sm:w-80
                       max-h-96
                       overflow-y-auto
                       rounded-2xl
-                      p-3
+                      p-2
+                      sm:p-3
                       z-50
                     "
                     style={{
@@ -196,8 +221,10 @@ export default function SearchBox({
                 type="submit"
                 title="Search"
                 className="
-                  w-10
-                  h-10
+                  w-full
+                  sm:w-10
+                  h-11
+                  sm:h-10
                   flex
                   items-center
                   justify-center
@@ -208,9 +235,16 @@ export default function SearchBox({
                   shadow-[0_0_20px_rgba(249,115,22,0.45)]
                   hover:scale-105
                   transition
+                  min-h-[44px]
+                  sm:min-h-auto
+                  text-sm
+                  sm:text-base
+                  font-medium
+                  sm:font-normal
                 "
               >
-                <FaSearch size={14} />
+                <FaSearch size={16} className="sm:block md:size-4" />
+                <span className="sm:hidden">Search</span>
               </button>
             </div>
           </div>
@@ -218,22 +252,31 @@ export default function SearchBox({
       </div>
       
       {showSuggestions && (
-      <div className="flex flex-wrap justify-center gap-4 mt-6 mb-15">
+      <div className="flex flex-wrap justify-center gap-2 sm:gap-3 md:gap-4 mt-4 sm:mt-6 mb-15 px-2 sm:px-0">
         <button
   onClick={() => setQuery("AI in Education")}
   type="button"
   className="
-    px-6
-    py-3
+    px-3
+    sm:px-6
+    py-2
+    sm:py-3
     rounded-full
     border
     border-slate-700
     text-slate-400
-    text-sm
+    text-xs
+    sm:text-sm
     hover:border-orange-400
     hover:text-orange-400
     transition
     cursor-pointer
+    min-h-[40px]
+    sm:min-h-auto
+    flex
+    items-center
+    justify-center
+    whitespace-nowrap
   "
 >
   AI in Education
@@ -242,9 +285,25 @@ export default function SearchBox({
         <button onClick={() => setQuery("Climate Change")}
          type="button"
           className="
-            px-6 py-3 rounded-full border border-slate-700
-            text-slate-400 text-sm
-            hover:border-orange-400 hover:text-orange-400 transition
+            px-3
+            sm:px-6
+            py-2
+            sm:py-3
+            rounded-full
+            border
+            border-slate-700
+            text-slate-400
+            text-xs
+            sm:text-sm
+            hover:border-orange-400
+            hover:text-orange-400
+            transition
+            min-h-[40px]
+            sm:min-h-auto
+            flex
+            items-center
+            justify-center
+            whitespace-nowrap
           "
         >
           Climate Change
@@ -254,9 +313,25 @@ export default function SearchBox({
           onClick={() => setQuery("Future of LLMs")}
           type="button"
           className="
-            px-6 py-3 rounded-full border border-slate-700
-            text-slate-400 text-sm
-            hover:border-orange-400 hover:text-orange-400 transition
+            px-3
+            sm:px-6
+            py-2
+            sm:py-3
+            rounded-full
+            border
+            border-slate-700
+            text-slate-400
+            text-xs
+            sm:text-sm
+            hover:border-orange-400
+            hover:text-orange-400
+            transition
+            min-h-[40px]
+            sm:min-h-auto
+            flex
+            items-center
+            justify-center
+            whitespace-nowrap
           "
         >
           Future of LLMs

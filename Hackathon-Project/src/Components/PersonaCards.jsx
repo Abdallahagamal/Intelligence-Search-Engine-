@@ -67,7 +67,7 @@ function PersonaCard({ persona, sources, index }) {
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: index * 0.12, duration: 0.4 }}
-      className="rounded-2xl overflow-hidden cursor-pointer select-none"
+      className="rounded-lg sm:rounded-2xl overflow-hidden cursor-pointer select-none"
       style={{
         background: persona.bg,
         border: `1px solid ${persona.border}`,
@@ -76,18 +76,18 @@ function PersonaCard({ persona, sources, index }) {
       onClick={() => setExpanded((v) => !v)}
     >
       {/* Header */}
-      <div className="p-5">
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex items-center gap-3">
+      <div className="p-3 sm:p-5">
+        <div className="flex items-start justify-between gap-2 sm:gap-3">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
             <div
-              className="w-11 h-11 rounded-2xl flex items-center justify-center text-2xl flex-shrink-0"
+              className="w-8 h-8 sm:w-11 sm:h-11 rounded-lg sm:rounded-2xl flex items-center justify-center text-lg sm:text-2xl flex-shrink-0"
               style={{ background: persona.color + "18" }}
             >
               {persona.emoji}
             </div>
-            <div>
-              <p className="text-white font-bold text-sm">{persona.name}</p>
-              <p className="text-xs mt-0.5" style={{ color: persona.color + "bb" }}>
+            <div className="min-w-0">
+              <p className="text-white font-bold text-xs sm:text-sm truncate">{persona.name}</p>
+              <p className="text-[10px] sm:text-xs mt-0.5 truncate" style={{ color: persona.color + "bb" }}>
                 {persona.role}
               </p>
             </div>
@@ -95,31 +95,31 @@ function PersonaCard({ persona, sources, index }) {
 
           <div className="flex flex-col items-end gap-1 flex-shrink-0">
             <span
-              className="text-xs font-semibold px-2 py-0.5 rounded-full"
+              className="text-[10px] sm:text-xs font-semibold px-2 py-0.5 rounded-full"
               style={{ background: persona.color + "18", color: persona.color }}
             >
               {groupSources.length} source{groupSources.length !== 1 ? "s" : ""}
             </span>
-            <span className="text-[10px] text-slate-500">{avgConf}% avg confidence</span>
+            <span className="text-[9px] sm:text-[10px] text-slate-500 whitespace-nowrap">{avgConf}% conf</span>
           </div>
         </div>
 
         {voice && (
           <blockquote
-            className="mt-4 text-sm leading-6 italic"
+            className="mt-2 sm:mt-4 text-xs sm:text-sm leading-5 sm:leading-6 italic line-clamp-2 sm:line-clamp-none"
             style={{ color: "rgba(255,255,255,0.6)", borderLeft: `2px solid ${persona.color}44`, paddingLeft: 12 }}
           >
             "{voice}"
           </blockquote>
         )}
 
-        <div className="mt-3 flex items-center gap-2 text-xs text-slate-600">
+        <div className="mt-2 sm:mt-3 flex items-center gap-2 text-[9px] sm:text-xs text-slate-600 flex-wrap">
           <span>From:</span>
           {persona.platforms.map((p) => (
-            <span key={p} className="capitalize text-slate-500">{p}</span>
+            <span key={p} className="capitalize text-slate-500 whitespace-nowrap">{p}</span>
           ))}
-          <span className="ml-auto" style={{ color: persona.color + "88" }}>
-            {expanded ? "▲ Less" : "▼ See sources"}
+          <span className="ml-auto flex-shrink-0" style={{ color: persona.color + "88" }}>
+            {expanded ? "▲ Less" : "▼ See"}
           </span>
         </div>
       </div>
@@ -135,7 +135,7 @@ function PersonaCard({ persona, sources, index }) {
             className="overflow-hidden"
           >
             <div
-              className="px-5 pb-5 space-y-2.5 border-t"
+              className="px-3 sm:px-5 pb-3 sm:pb-5 space-y-2 sm:space-y-2.5 border-t"
               style={{ borderColor: persona.border }}
               onClick={(e) => e.stopPropagation()}
             >
@@ -145,26 +145,26 @@ function PersonaCard({ persona, sources, index }) {
                   href={src.link || "#"}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex items-start gap-3 p-3 rounded-xl transition-all group"
+                  className="flex items-start gap-2 sm:gap-3 p-2 sm:p-3 rounded-lg sm:rounded-xl transition-all group"
                   style={{
                     background: "rgba(255,255,255,0.03)",
                     border: "1px solid rgba(255,255,255,0.05)",
-                    marginTop: i === 0 ? 12 : 0,
+                    marginTop: i === 0 ? 8 : 0,
                   }}
                   onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.06)")}
                   onMouseLeave={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.03)")}
                 >
                   <div
-                    className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold flex-shrink-0 mt-0.5"
+                    className="w-4 h-4 sm:w-5 sm:h-5 rounded-full flex items-center justify-center text-[8px] sm:text-[9px] font-bold flex-shrink-0 mt-0.5"
                     style={{ background: persona.color + "22", color: persona.color }}
                   >
                     {i + 1}
                   </div>
                   <div className="min-w-0">
-                    <p className="text-white text-xs font-medium leading-5 line-clamp-2 group-hover:text-orange-300 transition-colors">
+                    <p className="text-white text-[11px] sm:text-xs font-medium leading-4 sm:leading-5 line-clamp-2 group-hover:text-orange-300 transition-colors">
                       {src.title}
                     </p>
-                    <p className="text-slate-600 text-[10px] mt-0.5">{src.confidence} confidence</p>
+                    <p className="text-slate-600 text-[9px] sm:text-[10px] mt-0.5">{src.confidence} confidence</p>
                   </div>
                 </a>
               ))}
@@ -190,13 +190,14 @@ export default function PersonaCards({ sources }) {
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4 }}
+      className="px-2 sm:px-0"
     >
-      <h2 className="text-xl font-bold text-white mb-6">🎭 Three Perspectives</h2>
-      <p className="text-sm text-slate-500 mb-6 -mt-3">
-        The same question, seen through different lenses. Click any card to see the underlying sources.
+      <h2 className="text-lg sm:text-xl font-bold text-white mb-3 sm:mb-6">🎭 Three Perspectives</h2>
+      <p className="text-xs sm:text-sm text-slate-500 mb-4 sm:mb-6 -mt-1 sm:-mt-3">
+        The same question, seen through different lenses. Click any card to see sources.
       </p>
 
-      <div className="grid md:grid-cols-3 gap-5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-5">
         {activePersonas.map((persona, i) => (
           <PersonaCard
             key={persona.id}

@@ -1,19 +1,60 @@
 @import "tailwindcss";
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 
-*{
+* {
   box-sizing: border-box;
 }
 
-body{
+html {
+  scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  /* Prevent horizontal scroll on mobile */
+  overflow-x: hidden;
+}
+
+body {
   background-color: #080503;
   color: white;
   font-family: 'Inter', sans-serif;
-}
-button {
-  cursor: pointer;
+  overflow-x: hidden;
+  line-height: 1.5;
 }
 
+/* Touch-friendly buttons — only buttons, not all links */
+button {
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+/* Responsive typography */
+html {
+  font-size: clamp(14px, 2vw, 16px);
+}
+
+@media (max-width: 640px) {
+  html {
+    font-size: 14px;
+  }
+}
+
+@media (min-width: 1024px) {
+  html {
+    font-size: 16px;
+  }
+}
+
+/* Ensure images are responsive */
+img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+}
+
+/* Prevent horizontal overflow */
+#root, .min-h-screen {
+  overflow-x: hidden;
+}
 
 @keyframes glow-move {
   0% { background-position: 0% 50%; }
@@ -31,7 +72,7 @@ button {
 .glow-border {
   position: absolute;
   inset: -2px;
-  border-radius: 1.6rem; 
+  border-radius: clamp(1rem, 5vw, 1.6rem); 
   padding: 2px;
   background: conic-gradient(
     from var(--glow-angle, 0deg),
@@ -59,12 +100,18 @@ button {
   z-index: 1;
 }
 
+@media (max-width: 640px) {
+  .glow-border {
+    display: none;
+  }
+}
+
 
 .glow-border::after {
   content: "";
   position: absolute;
   inset: -10px;
-  border-radius: 1.9rem;
+  border-radius: clamp(1.2rem, 5vw, 1.9rem);
   background: conic-gradient(
     from var(--glow-angle, 0deg),
     transparent 0deg,
@@ -78,6 +125,12 @@ button {
   filter: blur(18px);
   opacity: 0.45;
   z-index: -1;
+}
+
+@media (max-width: 640px) {
+  .glow-border::after {
+    display: none;
+  }
 }
 
 @keyframes glow-spin {
@@ -266,4 +319,13 @@ button {
   src: url('./assets/fonts/Sequel_Sans_Black_Head.ttf') format('truetype');
   font-weight: 900;
   font-style: normal;
+}
+
+/* Mobile sidebar overlay */
+.sidebar-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 40;
+  backdrop-filter: blur(2px);
 }
