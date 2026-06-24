@@ -7,22 +7,22 @@ import "@fontsource/sora";
 import "@fontsource/outfit";
 import "@fontsource/space-grotesk";
 import "@fontsource/inter"; // add this
-import PlatformsMarquee from "../components/PlatformsMarquee";
+import PlatformsMarquee from "../Components/PlatformsMarquee";
 
-import SearchBox from "../components/SearchBox";
+import SearchBox from "../Components/SearchBox";
 
-import SourceCard from "../components/SourceCard";
-import TrendTags from "../components/TrendTags";
-import RelatedQuestions from "../components/RelatedQuestions";
-import IconRail from "../components/IconRail";
-import ParticleField from "../components/ParticleField";
-import PipelineProgress from "../components/PipelineProgress";
-import DebateCard from "../components/DebateCard";
-import KnowledgeGraph from "../components/KnowledgeGraph";
-import ConsensusMeter from "../components/ConsensusMeter";
-import CitedText from "../components/CitedText";
-import PersonaCards from "../components/PersonaCards";
-import PipelineReplay from "../components/PipelineReplay";
+import SourceCard from "../Components/SourceCard";
+import TrendTags from "../Components/TrendTags";
+import RelatedQuestions from "../Components/RelatedQuestions";
+import IconRail from "../Components/IconRail";
+import ParticleField from "../Components/ParticleField";
+import PipelineProgress from "../Components/PipelineProgress";
+import DebateCard from "../Components/DebateCard";
+import KnowledgeGraph from "../Components/KnowledgeGraph";
+import ConsensusMeter from "../Components/ConsensusMeter";
+import CitedText from "../Components/CitedText";
+import PersonaCards from "../Components/PersonaCards";
+import PipelineReplay from "../Components/PipelineReplay";
 
 const API_URL = "https://web-production-4f1c8.up.railway.app/research";
 
