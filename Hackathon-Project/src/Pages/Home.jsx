@@ -21,7 +21,7 @@ import CitedText from "../Components/CitedText";
 import PersonaCards from "../Components/PersonaCards";
 import PipelineReplay from "../Components/PipelineReplay";
 
-const API_URL = "https://EsraaMo9406-Intelligence-Search-Hackathon.hf.space/research";
+const API_URL = "https://esraamo9406-intelligence-search-hacathon.hf.space/research";
 
 export default function Home() {
   const [query, setQuery] = useState("");
